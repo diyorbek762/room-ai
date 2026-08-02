@@ -1,0 +1,59 @@
+{
+  "name": "room-ai",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "db:migrate": "prisma migrate dev",
+    "db:push": "prisma db push",
+    "db:seed": "tsx prisma/seed.ts",
+    "db:studio": "prisma studio",
+    "demo:download": "tsx scripts/download-demo-models.ts",
+    "demo:setup": "npm run demo:download && npm run db:push && npm run db:seed",
+    "assets:inspect": "tsx scripts/inspect-model.ts",
+    "assets:build": "tsx scripts/build-models.ts",
+    "assets:procedural": "tsx scripts/generate-procedural-models.ts",
+    "assets:all": "npm run assets:build && npm run assets:procedural",
+    "assets:validate": "tsx scripts/validate-assets.ts",
+    "assets:thumbnails": "tsx scripts/generate-thumbnails.ts"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "dependencies": {
+    "@prisma/adapter-better-sqlite3": "^7.9.1",
+    "@prisma/adapter-libsql": "^7.9.1",
+    "@prisma/client": "^7.9.1",
+    "@types/better-sqlite3": "^9.6.0",
+    "better-sqlite3": "^13.0.2",
+    "idb": "^8.0.3",
+    "next": "16.2.12",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "three": "^0.185.1",
+    "zustand": "^5.0.14"
+  },
+  "devDependencies": {
+    "@gltf-transform/cli": "^4.4.2",
+    "@gltf-transform/core": "^4.4.2",
+    "@gltf-transform/extensions": "^4.4.2",
+    "@gltf-transform/functions": "^4.4.2",
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@types/three": "^0.185.3",
+    "dotenv": "^17.4.2",
+    "draco3d": "^1.5.7",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.12",
+    "meshoptimizer": "^1.2.0",
+    "prisma": "^7.9.1",
+    "tailwindcss": "^4",
+    "tsx": "^4.23.1",
+    "typescript": "^5"
+  }
+}

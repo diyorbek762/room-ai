@@ -1,0 +1,39 @@
+name: Asset Validation
+
+on:
+  pull_request:
+    paths:
+      - "public/models/**"
+      - "assets/**"
+  push:
+    branches: [main]
+    paths:
+      - "public/models/**"
+      - "assets/**"
+
+jobs:
+  validate-assets:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate 3D assets
+        run: npx tsx scripts/validate-assets.ts --input public/models/demo
+
+      - name: Validate Draco-compressed models
+        run: |
+          if [ -d "public/models/draco-compressed" ]; then
+            npx tsx scripts/validate-assets.ts --input public/models/draco-compressed --no-strict
+          else
+            echo "No draco-compressed directory — skipping (run assets:compress locally)"
+          fi
