@@ -212,7 +212,7 @@ export function ARCameraStagerOverlay(props: ARCameraStagerOverlayProps) {
 
         {/* PRICE SUMMARY PANEL */}
         {totalPriceUZS > 0 && (
-          <div className="absolute top-12 right-0 bg-slate-900/90 backdrop-blur-md rounded-xl border border-white/20 p-3 flex flex-col items-end shadow-xl min-w-[160px] pointer-events-none">
+          <div className="absolute top-[72px] right-4 bg-slate-900/90 backdrop-blur-md rounded-xl border border-white/20 p-3 flex flex-col items-end shadow-xl min-w-[160px] pointer-events-none">
             <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 mb-0.5">Xona narxi</span>
             <span className="text-emerald-400 font-bold text-lg leading-none mb-1">
               {formatUZS(totalPriceUZS)}
@@ -484,24 +484,27 @@ export function ARCameraStagerOverlay(props: ARCameraStagerOverlayProps) {
       )}
 
       {/* Hint when a product is armed for placement */}
-      {selectedProductName && !selectedObjectId && !marketOpen && !finishOpen && (
-        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
-          <div className="bg-slate-900/80 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/10 text-[11px] text-slate-200">
-            <span className="text-emerald-400">▸</span> {selectedProductName} —{" "}
-            {products.find(p => (p.nameUz || p.name) === selectedProductName)?.placement === "wall"
-              ? "point camera at a wall and tap to mount"
-              : products.find(p => (p.nameUz || p.name) === selectedProductName)?.placement === "floor-wall"
-                ? "tap floor to place · drag near wall to snap"
-                : "tap or drag floor to place"}
+      {selectedProductName && !selectedObjectId && !marketOpen && !finishOpen && scanStatus === "ready" && (
+        <div className="absolute top-28 left-1/2 -translate-x-1/2 z-30 pointer-events-none w-[90%] max-w-sm flex justify-center">
+          <div className="bg-slate-900/80 backdrop-blur-md px-3 py-2 rounded-xl border border-white/10 text-[11px] text-slate-200 text-center shadow-lg">
+            <span className="text-emerald-400 block mb-0.5 font-semibold">▸ {selectedProductName}</span>
+            <span className="text-slate-400">
+              {products.find(p => (p.nameUz || p.name) === selectedProductName)?.placement === "wall"
+                ? "point camera at a wall and tap to mount"
+                : products.find(p => (p.nameUz || p.name) === selectedProductName)?.placement === "floor-wall"
+                  ? "tap floor to place · drag near wall to snap"
+                  : "tap or drag floor to place"}
+            </span>
           </div>
         </div>
       )}
 
       {/* Hint in edit mode */}
-      {selectedObjectId && !marketOpen && !finishOpen && (
-        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
-          <div className="bg-emerald-500/20 backdrop-blur-md px-3 py-1.5 rounded-full border border-emerald-400/40 text-[11px] text-emerald-200">
-            <span className="text-emerald-300">●</span> Editing — drag, pinch, twist · tap empty floor to deselect
+      {selectedObjectId && !marketOpen && !finishOpen && scanStatus === "ready" && (
+        <div className="absolute top-28 left-1/2 -translate-x-1/2 z-30 pointer-events-none w-[90%] max-w-sm flex justify-center">
+          <div className="bg-emerald-500/20 backdrop-blur-md px-3 py-2 rounded-xl border border-emerald-400/40 text-[11px] text-emerald-200 text-center shadow-lg">
+            <span className="text-emerald-300 font-semibold block mb-0.5">● Editing</span>
+            <span className="text-emerald-200/80">drag, pinch, twist · tap empty floor to deselect</span>
           </div>
         </div>
       )}

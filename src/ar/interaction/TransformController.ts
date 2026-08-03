@@ -168,6 +168,13 @@ export class TransformController {
     if (this.anchorManager) {
       this.anchorManager.deleteAnchor(this.selectedId);
     }
+    
+    // Update floor plane height to match the object's current height, 
+    // so dragging feels mathematically accurate and doesn't drift.
+    const placedModel = this.placer.getPlacedModel(this.selectedId);
+    if (placedModel && placedModel.surfaceType !== "wall") {
+      this.floorPlane.constant = -placedModel.model.position.y;
+    }
   }
 
   onDragMove(screenX: number, screenY: number): void {
@@ -199,25 +206,9 @@ export class TransformController {
       const hit = this.raycaster.ray.intersectPlane(this.floorPlane, this._intersection);
       
       if (hit) {
-        this._intersection.y = placedModel.model.position.y;
-        
-        // Physics: Wall Collision Detection
-        if (this.planeManager && this.planeManager.hasWalls()) {
-          const radius = this.placer.getModelRadius(this.selectedId);
-          // Query for walls within collision range + a little padding
-          const collision = this.planeManager.findNearestWall(this._intersection, radius + 0.1);
-          
-          if (collision) {
-            // Check if the object's bounding volume is intersecting the wall
-            if (collision.distance < radius) {
-              // Resolution: push the intersection point out along the wall normal
-              // exactly by the penetration depth.
-              const penetrationDepth = radius - collision.distance;
-              this._intersection.addScaledVector(collision.wallNormal, penetrationDepth);
-            }
-          }
-        }
-
+        // We've removed the aggressive wall physics collision here because ARCore often
+        // detects false walls (like table edges or noise) which causes the object
+        // to get stuck and push away from the user incorrectly.
         this.placer.updateTransform(this.selectedId, this._intersection);
         this.updateHighlightPosition(placedModel);
       }
