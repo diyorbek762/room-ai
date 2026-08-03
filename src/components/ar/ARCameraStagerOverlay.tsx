@@ -210,18 +210,6 @@ export function ARCameraStagerOverlay(props: ARCameraStagerOverlayProps) {
           </span>
         </div>
 
-        {/* PRICE SUMMARY PANEL */}
-        {totalPriceUZS > 0 && (
-          <div className="absolute top-[72px] right-4 bg-slate-900/90 backdrop-blur-md rounded-xl border border-white/20 p-3 flex flex-col items-end shadow-xl min-w-[160px] pointer-events-none">
-            <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 mb-0.5">Xona narxi</span>
-            <span className="text-emerald-400 font-bold text-lg leading-none mb-1">
-              {formatUZS(totalPriceUZS)}
-            </span>
-            <span className="text-[10px] text-slate-300/80">
-              6 oy: {formatUZS(totalPriceUZS / 6)} / oy
-            </span>
-          </div>
-        )}
 
         <div className="flex items-center gap-2 flex-shrink-0">
           <button
@@ -240,6 +228,19 @@ export function ARCameraStagerOverlay(props: ARCameraStagerOverlayProps) {
           </button>
         </div>
       </div>
+
+      {/* PRICE SUMMARY PANEL (Moved to bottom right to avoid overlap with top banners) */}
+      {totalPriceUZS > 0 && (
+        <div className="absolute bottom-28 right-4 z-30 bg-slate-900/90 backdrop-blur-md rounded-xl border border-white/20 p-3 flex flex-col items-end shadow-xl min-w-[160px] pointer-events-none">
+          <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 mb-0.5">Xona narxi</span>
+          <span className="text-emerald-400 font-bold text-lg leading-none mb-1">
+            {formatUZS(totalPriceUZS)}
+          </span>
+          <span className="text-[10px] text-slate-300/80">
+            6 oy: {formatUZS(totalPriceUZS / 6)} / oy
+          </span>
+        </div>
+      )}
 
       {/* LAYER 2: In-Camera Active Object Control Bar (Edit Mode) */}
       {selectedObjectId && (
