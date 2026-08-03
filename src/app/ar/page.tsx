@@ -138,6 +138,11 @@ export default function ARPage() {
     isARActiveRef.current = isARActive;
   }, [isARActive]);
 
+  const totalPriceUZS = placedObjects.reduce((sum, obj) => {
+    const product = demoCatalog.find((p) => p.id === obj.productId);
+    return sum + (product?.priceUZS || 0);
+  }, 0);
+
   useEffect(() => {
     overlayStateRef.current = { marketOpen, finishOpen };
   }, [marketOpen, finishOpen]);
@@ -286,11 +291,45 @@ export default function ARPage() {
 
       const hitDetected = hitTestManager.update(frame, refSpace);
 
-      // Pulse the selected-object highlight and loading placeholders
       const dtSec = lastFrameTime === 0 ? 0.016 : (time - lastFrameTime) / 1000;
       lastFrameTime = time;
       transformControllerRef.current?.updateHighlightAnimation(dtSec);
       objectPlacerRef.current?.updateLoadingAnimation(time / 1000);
+
+      // --- Update AR Price Tags ---
+      const placedModels = objectPlacerRef.current?.getAllPlacedModelsMap();
+      const camera = renderer.getCamera();
+      if (placedModels) {
+        for (const [id, modelData] of placedModels.entries()) {
+          const el = document.getElementById(`ar-tag-${id}`);
+          if (el) {
+            // Get world position of the object
+            const pos = new THREE.Vector3();
+            modelData.model.getWorldPosition(pos);
+            
+            // Adjust Y so the tag is placed roughly above the object
+            // Using bounding box max.y is better, but a flat +1m is an okay fallback
+            if (modelData.boundingBox) {
+              pos.y = modelData.boundingBox.max.y + 0.15;
+            } else {
+              pos.y += 1.0; 
+            }
+
+            pos.project(camera);
+
+            // Check if the object is in front of the camera
+            if (pos.z < 1) {
+              const x = (pos.x * 0.5 + 0.5) * window.innerWidth;
+              const y = (pos.y * -0.5 + 0.5) * window.innerHeight;
+              el.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+              el.style.display = 'block';
+            } else {
+              el.style.display = 'none';
+            }
+          }
+        }
+      }
+      // ----------------------------
 
       // Update guidance message every 60 frames (~1s)
       guidanceCounter++;
@@ -718,6 +757,7 @@ export default function ARPage() {
             hitTestReady={hitTestReady}
             selectedObjectId={selectedObjectId}
             placedObjectsCount={placedObjects.length}
+            totalPriceUZS={totalPriceUZS}
             loadingCount={loadingCount}
             selectedProductName={selectedProduct.nameUz || selectedProduct.name}
             products={ALL_PRODUCTS}

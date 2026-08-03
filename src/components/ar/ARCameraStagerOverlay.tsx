@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { cn, formatUZS } from "@/lib/format";
+import { useARStore } from "@/store/useARStore";
 
 export interface OverlayProduct {
   id: string;
@@ -45,6 +46,7 @@ export interface ARCameraStagerOverlayProps {
   hitTestReady: boolean;
   selectedObjectId: string | null;
   placedObjectsCount: number;
+  totalPriceUZS: number;
   loadingCount: number;
   selectedProductName: string;
   products: OverlayProduct[];
@@ -76,6 +78,7 @@ export function ARCameraStagerOverlay(props: ARCameraStagerOverlayProps) {
     hitTestReady,
     selectedObjectId,
     placedObjectsCount,
+    totalPriceUZS,
     loadingCount,
     selectedProductName,
     products,
@@ -100,6 +103,8 @@ export function ARCameraStagerOverlay(props: ARCameraStagerOverlayProps) {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<CategoryKey | "all">("all");
+  
+  const placedObjects = useARStore((s) => s.placedObjects);
 
   const filteredMarket = products.filter((p) => {
     if (categoryFilter !== "all" && p.categorySlug !== categoryFilter) return false;
@@ -114,6 +119,33 @@ export function ARCameraStagerOverlay(props: ARCameraStagerOverlayProps) {
 
   return (
     <>
+      {/* LAYER 0: AR Price Tags (updated directly via DOM in render loop for 60fps) */}
+      <div id="ar-price-tags-container" className="absolute inset-0 pointer-events-none overflow-hidden z-20">
+        {placedObjects.map((obj) => {
+          const product = products.find((p) => p.id === obj.productId);
+          if (!product) return null;
+          return (
+            <div
+              key={obj.id}
+              id={`ar-tag-${obj.id}`}
+              className="absolute hidden -translate-x-1/2 -translate-y-full pb-2"
+              style={{ transform: "translate3d(-1000px, -1000px, 0)" }}
+            >
+              <div className="bg-slate-900/80 backdrop-blur-md rounded-xl border border-white/20 px-3 py-1.5 shadow-xl flex flex-col items-center">
+                <span className="text-white font-semibold text-xs whitespace-nowrap drop-shadow-md">
+                  {formatUZS(product.priceUZS)}
+                </span>
+                <span className="text-slate-300 text-[10px] whitespace-nowrap">
+                  {product.nameUz || product.name}
+                </span>
+              </div>
+              {/* Little triangle pointing down */}
+              <div className="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-slate-900/80 mx-auto" />
+            </div>
+          );
+        })}
+      </div>
+
       {/* LAYER 1: Floating Header */}
       <div className="absolute top-4 left-4 right-4 z-30 flex items-center justify-between gap-2 pointer-events-auto">
         <div className="bg-slate-900/80 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-white/10 text-xs text-slate-200 font-medium flex items-center gap-2 min-w-0">
@@ -150,6 +182,19 @@ export function ARCameraStagerOverlay(props: ARCameraStagerOverlayProps) {
             )}
           </span>
         </div>
+
+        {/* PRICE SUMMARY PANEL */}
+        {totalPriceUZS > 0 && (
+          <div className="absolute top-12 right-0 bg-slate-900/90 backdrop-blur-md rounded-xl border border-white/20 p-3 flex flex-col items-end shadow-xl min-w-[160px] pointer-events-none">
+            <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 mb-0.5">Xona narxi</span>
+            <span className="text-emerald-400 font-bold text-lg leading-none mb-1">
+              {formatUZS(totalPriceUZS)}
+            </span>
+            <span className="text-[10px] text-slate-300/80">
+              6 oy: {formatUZS(totalPriceUZS / 6)} / oy
+            </span>
+          </div>
+        )}
 
         <div className="flex items-center gap-2 flex-shrink-0">
           <button
@@ -474,9 +519,9 @@ function FinishModalOverlay({
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 pointer-events-auto">
-      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm print:hidden" onClick={onClose} />
 
-      <div className="relative w-full max-w-sm bg-slate-900/95 backdrop-blur-2xl border border-white/15 rounded-3xl p-6 shadow-2xl">
+      <div id="print-modal" className="relative w-full max-w-sm bg-slate-900/95 backdrop-blur-2xl border border-white/15 rounded-3xl p-6 shadow-2xl">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-white font-bold text-lg">Room Staged!</h2>
           <button
@@ -534,24 +579,69 @@ function FinishModalOverlay({
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={onPlaceOrder}
-              className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-3 rounded-xl active:scale-95 transition-all"
-            >
-              Place Order
-            </button>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="flex-1 bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 rounded-xl active:scale-95 transition-all print:hidden"
+              >
+                Save as PDF
+              </button>
+              <button
+                type="button"
+                onClick={onPlaceOrder}
+                className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-3 rounded-xl active:scale-95 transition-all print:hidden"
+              >
+                Place Order
+              </button>
+            </div>
           </>
         )}
 
         <button
           type="button"
           onClick={onClose}
-          className="w-full text-slate-400 hover:text-white py-2 text-sm mt-2"
+          className="w-full text-slate-400 hover:text-white py-2 text-sm mt-2 print:hidden"
         >
           Back to AR
         </button>
       </div>
     </div>
   );
+}
+
+// Add print styles globally when this component mounts
+if (typeof window !== "undefined") {
+  const style = document.createElement("style");
+  style.innerHTML = `
+    @media print {
+      body * {
+        visibility: hidden;
+      }
+      #print-modal, #print-modal * {
+        visibility: visible;
+      }
+      #print-modal {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        background: white !important;
+        color: black !important;
+        border: none !important;
+        box-shadow: none !important;
+        padding: 2cm !important;
+      }
+      #print-modal h2 {
+        color: black !important;
+      }
+      #print-modal span {
+        color: black !important;
+      }
+      .print\\:hidden {
+        display: none !important;
+      }
+    }
+  `;
+  document.head.appendChild(style);
 }
