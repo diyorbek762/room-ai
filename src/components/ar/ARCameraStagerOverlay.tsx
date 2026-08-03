@@ -103,8 +103,8 @@ export function ARCameraStagerOverlay(props: ARCameraStagerOverlayProps) {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<CategoryKey | "all">("all");
-  
   const placedObjects = useARStore((s) => s.placedObjects);
+  const scanStatus = useARStore((s) => s.scanStatus);
 
   const filteredMarket = products.filter((p) => {
     if (categoryFilter !== "all" && p.categorySlug !== categoryFilter) return false;
@@ -145,6 +145,33 @@ export function ARCameraStagerOverlay(props: ARCameraStagerOverlayProps) {
           );
         })}
       </div>
+
+      {/* LAYER 0.5: Scanning Overlay Phase */}
+      {scanStatus === "scanning" && (
+        <div className="absolute inset-0 z-25 flex flex-col items-center justify-center bg-slate-950/80 backdrop-blur-sm pointer-events-auto">
+          {/* Animated Scanning Icon */}
+          <div className="relative w-24 h-24 mb-6">
+            <div className="absolute inset-0 border-4 border-emerald-500/30 rounded-full animate-[ping_2s_cubic-bezier(0,0,0.2,1)_infinite]" />
+            <div className="absolute inset-0 border-2 border-emerald-400 rounded-full flex items-center justify-center">
+              <svg 
+                className="w-10 h-10 text-emerald-400 animate-pulse" 
+                fill="none" viewBox="0 0 24 24" stroke="currentColor"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+              </svg>
+            </div>
+            {/* Radar Sweep Effect */}
+            <div className="absolute inset-0 rounded-full overflow-hidden">
+              <div className="w-full h-1/2 bg-gradient-to-b from-transparent to-emerald-400/40 origin-bottom animate-[spin_3s_linear_infinite]" />
+            </div>
+          </div>
+          
+          <h2 className="text-white text-xl font-bold mb-2">Scan Your Room</h2>
+          <p className="text-slate-300 text-center text-sm max-w-[250px]">
+            Point your camera at the floor and move it slowly side-to-side to detect surfaces.
+          </p>
+        </div>
+      )}
 
       {/* LAYER 1: Floating Header */}
       <div className="absolute top-4 left-4 right-4 z-30 flex items-center justify-between gap-2 pointer-events-auto">

@@ -6,12 +6,14 @@ import type { PlacedObject } from "@/types";
 interface ARStoreState {
   isARActive: boolean;
   hitTestReady: boolean;
+  scanStatus: "scanning" | "ready";
   reticlePose: Float32Array | null;
   placedObjects: PlacedObject[];
   selectedObjectId: string | null;
 
   setARActive: (active: boolean) => void;
   setHitTestReady: (ready: boolean) => void;
+  setScanStatus: (status: "scanning" | "ready") => void;
   setReticlePose: (pose: Float32Array | null) => void;
 
   placeObject: (productId: string, modelUrl: string, position: Vector3Tuple) => void;
@@ -33,12 +35,14 @@ export const useARStore = create<ARStoreState>()(
     (set) => ({
       isARActive: false,
       hitTestReady: false,
+      scanStatus: "scanning",
       reticlePose: null,
       placedObjects: [],
       selectedObjectId: null,
 
-      setARActive: (active) => set({ isARActive: active }),
+      setARActive: (active) => set({ isARActive: active, scanStatus: "scanning" }), // Reset scan when starting AR
       setHitTestReady: (ready) => set({ hitTestReady: ready }),
+      setScanStatus: (status) => set({ scanStatus: status }),
       setReticlePose: (pose) => set({ reticlePose: pose }),
 
       placeObject: (productId, modelUrl, position) =>

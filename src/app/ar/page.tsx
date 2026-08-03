@@ -127,6 +127,7 @@ export default function ARPage() {
   const placeObject = useARStore((s) => s.placeObject);
   const removeObject = useARStore((s) => s.removeObject);
   const updateTransform = useARStore((s) => s.updateTransform);
+  const setScanStatus = useARStore((s) => s.setScanStatus);
   const router = useRouter();
   const cartAddItem = useCartStore((s) => s.addItem);
 
@@ -352,6 +353,16 @@ export default function ARPage() {
         setHitTestReady(true);
       }
 
+      // --- Room Scanning Logic ---
+      // We consider the room "scanned" if we have at least one valid floor hit and at least one horizontal plane
+      if (
+        useARStore.getState().scanStatus === "scanning" &&
+        hitTestManager.hasEverDetected() && 
+        planeManager.getReferenceFloorY() !== Infinity
+      ) {
+        setScanStatus("ready");
+      }
+
       renderer.render();
     });
   }, []);
@@ -423,6 +434,7 @@ export default function ARPage() {
       if (!isARActiveRef.current) return;
       const overlay = overlayStateRef.current;
       if (overlay.marketOpen || overlay.finishOpen) return;
+      if (useARStore.getState().scanStatus === "scanning") return; // block taps while scanning
       const tc = transformControllerRef.current;
       if (!tc) return;
 
@@ -472,6 +484,7 @@ export default function ARPage() {
       if (!isARActiveRef.current) return;
       const overlay = overlayStateRef.current;
       if (overlay.marketOpen || overlay.finishOpen) return;
+      if (useARStore.getState().scanStatus === "scanning") return;
       const tc = transformControllerRef.current;
       if (!tc) return;
       const state = touchRef.current;
@@ -511,6 +524,8 @@ export default function ARPage() {
       if (!isARActiveRef.current) { touchRef.current.mode = "none"; return; }
       const overlay = overlayStateRef.current;
       if (overlay.marketOpen || overlay.finishOpen) { touchRef.current.mode = "none"; return; }
+      if (useARStore.getState().scanStatus === "scanning") { touchRef.current.mode = "none"; return; }
+      
       const tc = transformControllerRef.current;
       const state = touchRef.current;
       if (!tc) { state.mode = "none"; return; }
