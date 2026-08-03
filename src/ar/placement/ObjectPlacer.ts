@@ -254,15 +254,20 @@ export class ObjectPlacer {
         }
       });
 
+      // Compute local-space bounding box BEFORE applying world transform.
+      // This gives us the true bottom of the model geometry.
+      const localBBox = new THREE.Box3().setFromObject(realModel);
+      const localMinY = localBBox.min.y;
+
       realModel.position.copy(pos);
       realModel.quaternion.copy(quat);
       realModel.scale.copy(scl);
 
-      // Adjust Y so bottom of model sits on surface
-      const realBBox = new THREE.Box3().setFromObject(realModel);
-      const minY = realBBox.min.y;
-      if (Math.abs(minY) > 0.001) {
-        realModel.position.y -= minY;
+      // Adjust Y so the bottom of the model sits exactly on the placement surface.
+      // localMinY is the model's lowest point in its own coordinate system.
+      // We subtract it so the bottom aligns with the hit-test position.
+      if (Math.abs(localMinY) > 0.001) {
+        realModel.position.y -= localMinY * scl.y;
       }
 
       // Cross-fade swap: 150ms. Real model starts at opacity 0; placeholder
