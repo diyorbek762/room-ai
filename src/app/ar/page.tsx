@@ -27,7 +27,7 @@ import { getModelUrl } from "@/lib/modelUrl";
 interface TouchState {
   startX: number;
   startY: number;
-  mode: "none" | "pending-place" | "pending-drag" | "drag" | "pinch";
+  mode: "none" | "pending-place" | "pending-deselect" | "pending-drag" | "drag" | "pinch";
   dragObjectId: string | null;
   lastPinchDist: number;
   lastTwistAngle: number;
@@ -457,10 +457,9 @@ export default function ARPage() {
         } else {
           // Tap on empty floor
           if (tc.getSelectedId()) {
-            // Currently editing an object → this tap DESELECTS it
-            tc.deselect();
-            setSelectedObjectId(null);
-            touchRef.current.mode = "none";
+            // Currently editing an object → wait until touchend to deselect
+            // so we don't accidentally abort a pinch gesture if the first finger hits empty space
+            touchRef.current.mode = "pending-deselect";
             touchRef.current.dragObjectId = null;
           } else {
             // No selection → this tap will PLACE the current product
@@ -533,6 +532,10 @@ export default function ARPage() {
       if (e.touches.length === 0) {
         if (state.mode === "pinch") { tc.onScaleEnd(); tc.onRotateEnd(); if (state.dragObjectId) syncObjectToStoreRef.current(state.dragObjectId); }
         else if (state.mode === "drag") { tc.onDragEnd(); if (state.dragObjectId) syncObjectToStoreRef.current(state.dragObjectId); }
+        else if (state.mode === "pending-deselect") {
+          tc.deselect();
+          setSelectedObjectId(null);
+        }
         else if (state.mode === "pending-place") {
           // Safety: never place while an object is currently selected
           if (tc.getSelectedId() === null) {
