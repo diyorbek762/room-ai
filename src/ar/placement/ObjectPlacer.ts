@@ -406,6 +406,16 @@ export class ObjectPlacer {
     return this.placedModels;
   }
 
+  getModelRadius(id: string): number {
+    const model = this.placedModels.get(id);
+    if (!model) return 0.2; // default radius
+    const size = new THREE.Vector3();
+    model.boundingBox.getSize(size);
+    // Multiply by object's world scale, assuming uniform
+    const scale = model.model.scale.x; 
+    return (Math.max(size.x, size.z) / 2) * scale;
+  }
+
   getPlacedModelByProduct(productId: string): PlacedModel | undefined {
     for (const model of this.placedModels.values()) {
       if (model.productId === productId) return model;

@@ -27,6 +27,7 @@ export class HitTestManager {
   // Colors
   private static readonly FLOOR_COLOR = 0x10b981; // emerald
   private static readonly WALL_COLOR = 0x3b82f6;  // blue
+  private static readonly INVALID_COLOR = 0xef4444; // red — invalid surface
 
   constructor(scene: THREE.Scene) {
     const { group, ring, innerRing, dot } = this.createReticle();
@@ -174,9 +175,19 @@ export class HitTestManager {
   }
 
   private updateReticleAppearance(): void {
-    const color = this.aimingAtWall
-      ? HitTestManager.WALL_COLOR
-      : HitTestManager.FLOOR_COLOR;
+    let color: number;
+    if (this.aimingAtWall) {
+      color = HitTestManager.WALL_COLOR;
+    } else {
+      // Check if this is a valid floor surface
+      const hitNormal = this.getHitNormal();
+      const hitPos = this.getHitPosition();
+      if (this.planeManager && !this.planeManager.isValidFloorPosition(hitPos, hitNormal)) {
+        color = HitTestManager.INVALID_COLOR;
+      } else {
+        color = HitTestManager.FLOOR_COLOR;
+      }
+    }
     (this.reticleRing.material as THREE.MeshBasicMaterial).color.setHex(color);
     (this.reticleDot.material as THREE.MeshBasicMaterial).color.setHex(color);
   }
@@ -187,6 +198,12 @@ export class HitTestManager {
 
   getHitQuaternion(): THREE.Quaternion {
     return this._scratchHitQuat.setFromRotationMatrix(this.hitPose);
+  }
+
+  /** Get the surface normal of the current hit (derived from the hit pose's local Y-axis). */
+  getHitNormal(): THREE.Vector3 {
+    const quat = this._scratchHitQuat.setFromRotationMatrix(this.hitPose);
+    return new THREE.Vector3(0, 1, 0).applyQuaternion(quat);
   }
 
   getHitMatrix(): THREE.Matrix4 {

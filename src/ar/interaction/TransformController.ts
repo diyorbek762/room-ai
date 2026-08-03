@@ -201,18 +201,20 @@ export class TransformController {
       if (hit) {
         this._intersection.y = placedModel.model.position.y;
         
-        // Floor-wall snapping: if item is floor-wall (demo-008, demo-015) 
-        // We can tell this if it was a floor item but has a placement type that allows wall.
-        // Actually, TransformController doesn't know the Catalog placement type directly, 
-        // but we can query the PlaneManager for snapping on ALL floor items as an enhancement,
-        // or check if it's within snap distance (0.3m).
-        if (this.planeManager) {
-          const snap = this.planeManager.findNearestWall(this._intersection, 0.3);
-          if (snap) {
-            // Snap to wall position, and align rotation
-            this._intersection.copy(snap.wallPosition);
-            // Optional: Auto-rotate floor items to sit flush against the wall
-            // placedModel.model.lookAt(this._intersection.clone().add(snap.wallNormal));
+        // Physics: Wall Collision Detection
+        if (this.planeManager && this.planeManager.hasWalls()) {
+          const radius = this.placer.getModelRadius(this.selectedId);
+          // Query for walls within collision range + a little padding
+          const collision = this.planeManager.findNearestWall(this._intersection, radius + 0.1);
+          
+          if (collision) {
+            // Check if the object's bounding volume is intersecting the wall
+            if (collision.distance < radius) {
+              // Resolution: push the intersection point out along the wall normal
+              // exactly by the penetration depth.
+              const penetrationDepth = radius - collision.distance;
+              this._intersection.addScaledVector(collision.wallNormal, penetrationDepth);
+            }
           }
         }
 

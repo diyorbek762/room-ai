@@ -500,7 +500,15 @@ export default function ARPage() {
               } else {
                 // floor or floor-wall
                 const pos = hm.getHitPosition();
-                placeSelectedProductRef.current(pos, hm.getHitQuaternion(), "floor");
+                const hitNormal = hm.getHitNormal();
+                const pm = planeManagerRef.current;
+
+                // Validate this is actually a floor surface (not a raised ledge/step)
+                if (pm && !pm.isValidFloorPosition(pos, hitNormal)) {
+                  setStatusMessage("Can't place here — not a valid floor surface");
+                } else {
+                  placeSelectedProductRef.current(pos, hm.getHitQuaternion(), "floor");
+                }
               }
             } else {
               setStatusMessage("No surface detected — move camera slowly to scan");
