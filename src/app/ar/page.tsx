@@ -804,6 +804,51 @@ export default function ARPage() {
     }
   }, [removeObject]);
 
+  const handleDuplicateSelected = useCallback(() => {
+    if (!transformControllerRef.current || !objectPlacerRef.current || !selectedObjectIdRef.current) return;
+    
+    const sourceId = selectedObjectIdRef.current;
+    const sourcePlaced = objectPlacerRef.current.getPlacedModel(sourceId);
+    if (!sourcePlaced) return;
+
+    // Find the product data for this model
+    const product = ALL_PRODUCTS.find(p => p.id === sourcePlaced.productId);
+    if (!product) return;
+
+    // Get the source's current transform
+    const pos = sourcePlaced.model.position.clone();
+    const quat = sourcePlaced.model.quaternion.clone();
+
+    // Offset the duplicate slightly to the right and forward so it doesn't z-fight
+    // and is obviously a new object. We offset by roughly half its width + 10cm.
+    const dims = product.dimensions;
+    const offsetDist = (dims.w / 2) + 0.1;
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(quat);
+    const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(quat);
+    pos.add(right.multiplyScalar(offsetDist)).add(forward.multiplyScalar(0.1));
+
+    // Place the new duplicate
+    const newId = `placed_${Date.now()}_${placeCounterRef.current++}`;
+    objectPlacerRef.current.placeObject(
+      newId,
+      product.id,
+      product.modelUrl,
+      pos,
+      quat,
+      undefined,
+      sourcePlaced.surfaceType,
+      sourcePlaced.wallNormal || undefined
+    );
+
+    // Save to store
+    useARStore.getState().placeObject(newId, product.id, product.modelUrl, [pos.x, pos.y, pos.z]);
+
+    // Automatically select the newly created duplicate
+    transformControllerRef.current.selectObject(newId);
+    setSelectedObjectId(newId);
+    setStatusMessage("Object duplicated");
+  }, []);
+
   const handleRotateLeft = useCallback(() => {
     transformControllerRef.current?.rotateSelectedByAngle(-Math.PI / 12);
   }, []);
@@ -1009,6 +1054,7 @@ export default function ARPage() {
             onSelectProduct={setSelectedProduct}
             onRotateLeft={handleRotateLeft}
             onRotateRight={handleRotateRight}
+            onDuplicateSelected={handleDuplicateSelected}
             onDeleteSelected={handleDeleteSelected}
             onClearScene={handleClearScene}
             onExit={handleExitAR}

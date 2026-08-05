@@ -58,6 +58,7 @@ export interface ARCameraStagerOverlayProps {
   onSelectProduct: (p: OverlayProduct) => void;
   onRotateLeft: () => void;
   onRotateRight: () => void;
+  onDuplicateSelected: () => void;
   onDeleteSelected: () => void;
   onClearScene: () => void;
   onExit: () => void;
@@ -90,6 +91,7 @@ export function ARCameraStagerOverlay(props: ARCameraStagerOverlayProps) {
     onSelectProduct,
     onRotateLeft,
     onRotateRight,
+    onDuplicateSelected,
     onDeleteSelected,
     onClearScene,
     onExit,
@@ -328,6 +330,13 @@ export function ARCameraStagerOverlay(props: ARCameraStagerOverlayProps) {
               className="h-9 px-3 bg-slate-800/90 hover:bg-slate-700 text-white text-xs font-semibold rounded-lg border border-white/10 active:scale-95 transition-all flex items-center justify-center"
             >
               ↻ R
+            </button>
+            <button
+              type="button"
+              onClick={onDuplicateSelected}
+              className="h-9 px-3 bg-blue-600/90 hover:bg-blue-500 text-white text-xs font-semibold rounded-lg border border-white/10 active:scale-95 transition-all flex items-center justify-center"
+            >
+              Duplicate
             </button>
             <button
               type="button"
