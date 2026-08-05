@@ -240,9 +240,9 @@ export function ARCameraStagerOverlay(props: ARCameraStagerOverlayProps) {
 
       {/* LAYER 2: In-Camera Active Object Control Bar (Edit Mode) */}
       {selectedObjectId && (
-        <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center gap-2 pointer-events-auto">
+        <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center gap-2 pointer-events-auto w-[95vw] max-w-sm">
           {/* Row 1: Move arrows + Scale +/− */}
-          <div className="flex items-center gap-1.5 bg-slate-900/80 backdrop-blur-md border border-white/10 rounded-xl p-1.5">
+          <div className="flex items-center gap-1.5 bg-slate-900/80 backdrop-blur-md border border-white/10 rounded-xl p-1.5 max-w-full overflow-x-auto scrollbar-hide">
             <button
               type="button"
               onClick={() => onNudge(-0.1, 0)}
@@ -316,7 +316,7 @@ export function ARCameraStagerOverlay(props: ARCameraStagerOverlayProps) {
           </div>
 
           {/* Row 2: Rotate, Delete, Deselect, Clear */}
-          <div className="flex items-center gap-1.5 bg-slate-900/80 backdrop-blur-md border border-white/10 rounded-xl p-1.5">
+          <div className="flex flex-wrap justify-center items-center gap-1.5 bg-slate-900/80 backdrop-blur-md border border-white/10 rounded-xl p-1.5 w-full">
             <button
               type="button"
               onClick={onRotateLeft}

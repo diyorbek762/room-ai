@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import type { PlacedModel } from "./ObjectPlacer";
+import type { PlaneManager } from "./PlaneManager";
 
 export interface CollisionResult {
   position: THREE.Vector3;
@@ -23,7 +24,8 @@ export class CollisionResolver {
   resolveFloorDrag(
     dragged: PlacedModel,
     candidatePos: THREE.Vector3,
-    others: PlacedModel[]
+    others: PlacedModel[],
+    planeManager: PlaneManager | null = null
   ): CollisionResult {
     const candidate = this.scratchBox.copy(dragged.boundingBox);
     const center = dragged.boundingBox.getCenter(this.scratchCenter);
@@ -60,6 +62,26 @@ export class CollisionResolver {
         }
         moved = true;
       }
+
+      // Resolve Wall Collisions
+      if (planeManager && planeManager.hasWalls()) {
+        const centerPos = candidate.getCenter(this.result);
+        const wallHit = planeManager.findNearestWall(centerPos, 2.0);
+        if (wallHit) {
+          this.scratchCenter.subVectors(centerPos, wallHit.wallPosition);
+          const signedDist = this.scratchCenter.dot(wallHit.wallNormal);
+          
+          const extents = candidate.getSize(this.scratchOther.max).multiplyScalar(0.5);
+          const r = extents.x * Math.abs(wallHit.wallNormal.x) + extents.z * Math.abs(wallHit.wallNormal.z);
+          
+          if (signedDist < r + GAP) {
+            const pushDist = (r + GAP) - signedDist;
+            candidate.translate(wallHit.wallNormal.clone().multiplyScalar(pushDist));
+            moved = true;
+          }
+        }
+      }
+
       if (!moved) break;
     }
 

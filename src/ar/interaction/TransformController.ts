@@ -303,7 +303,8 @@ export class TransformController {
         const resolved = this.collisionResolver.resolveFloorDrag(
           placedModel,
           this._intersection,
-          others
+          others,
+          this.planeManager
         );
         const wasColliding = this.collisionActive;
         this.collisionActive = resolved.collidedIds.length > 0;
@@ -434,7 +435,8 @@ export class TransformController {
       const resolved = this.collisionResolver.resolveFloorDrag(
         placed,
         placed.model.position,
-        this.placer.getAllPlacedModels().filter((m) => m.id !== this.selectedId)
+        this.placer.getAllPlacedModels().filter((m) => m.id !== this.selectedId),
+        this.planeManager
       );
       this.placer.updateTransform(this.selectedId, resolved.position);
       this.collisionActive = resolved.collidedIds.length > 0;

@@ -39,16 +39,11 @@ export class ARSessionManager {
       "anchors",
       "plane-detection",
       "light-estimation",
-      "depth-sensing",
     ];
 
     const sessionInit: XRSessionInit = {
       requiredFeatures,
       optionalFeatures,
-      depthSensing: {
-        usagePreference: ["cpu-optimized", "gpu-optimized"],
-        dataFormatPreference: ["luminance-alpha", "float32"],
-      },
     };
 
     if (overlayElement) {
@@ -62,11 +57,7 @@ export class ARSessionManager {
       try {
         const fallbackInit: XRSessionInit = {
           requiredFeatures: [],
-          optionalFeatures: ["hit-test", "local-floor", "dom-overlay", "anchors", "plane-detection", "depth-sensing"],
-          depthSensing: {
-            usagePreference: ["cpu-optimized", "gpu-optimized"],
-            dataFormatPreference: ["luminance-alpha", "float32"],
-          },
+          optionalFeatures: ["hit-test", "local-floor", "dom-overlay", "anchors", "plane-detection"],
         };
         if (overlayElement) {
           fallbackInit.domOverlay = { root: overlayElement };
