@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { GLTFLoader, type GLTF } from "three/addons/loaders/GLTFLoader.js";
 import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
 import { getCachedModel } from "@/lib/modelCache";
+import { CollisionResolver } from "./CollisionResolver";
 
 export interface PlacedModel {
   id: string;
@@ -19,6 +20,10 @@ export interface PlacedModel {
   /** Wall normal (only set when surfaceType === "wall"). */
   wallNormal: THREE.Vector3 | null;
   needsNewAnchor?: boolean;
+  /** Materials that participate in proximity fade, captured after load. */
+  fadeMaterials: { mat: THREE.Material; baseOpacity: number }[];
+  /** Current per-model proximity opacity multiplier (1 = fully visible). */
+  proximityOpacity: number;
 }
 
 export type PlacerEvent =
@@ -66,8 +71,15 @@ export class ObjectPlacer {
   private contactShadowTexture: THREE.CanvasTexture | null = null;
   private tempBox = new THREE.Box3();
   private tempVec = new THREE.Vector3();
+  private tempVec2 = new THREE.Vector3();
   private events: EventTarget = new EventTarget();
+
+  // Proximity fade constants (meters from camera to AABB surface)
+  private static readonly FADE_START = 0.5;
+  private static readonly FADE_END = 0.3;
+  private static readonly FADE_HYSTERESIS = 0.05;
   private productDimsResolver: ((productId: string) => { w: number; h: number; d: number } | null) | null = null;
+  private collisionResolver = new CollisionResolver();
 
   addEventListener(type: PlacerEvent["type"], handler: (e: Event) => void): void {
     this.events.addEventListener(type, handler);
@@ -86,12 +98,13 @@ export class ObjectPlacer {
   }
 
   /**
-   * Multiplier for the hit-test proxy box. 1.4x the model bounds makes taps
-   * near the silhouette (but not directly on a mesh triangle) still register
-   * as a hit, so users don't accidentally place a duplicate when they meant
-   * to select.
+   * Multiplier for the hit-test proxy box. A tight 1.15x padding keeps the
+   * hit zone close to the visible silhouette while still forgiving near-miss
+   * taps, without the old "fat finger" overlap where a 2x box swallowed taps
+   * meant for the floor beside an object.
    */
-  private static readonly HIT_PROXY_PADDING = 2.0;
+  private static readonly HIT_PROXY_PADDING = 1.15;
+  private static readonly MIN_HIT_PROXY_DIM = 0.15;
 
   constructor(scene: THREE.Scene, contactShadowTexture?: THREE.CanvasTexture) {
     this.scene = scene;
@@ -152,6 +165,8 @@ export class ObjectPlacer {
       isLoading: true,
       surfaceType,
       wallNormal: wallNormal?.clone() ?? null,
+      fadeMaterials: [],
+      proximityOpacity: 1,
     };
 
     this.placedModels.set(id, placedModel);
@@ -170,9 +185,9 @@ export class ObjectPlacer {
     box.getCenter(center);
     const paddedSize = size.multiplyScalar(ObjectPlacer.HIT_PROXY_PADDING);
     paddedSize.set(
-      Math.max(paddedSize.x, 0.3),
-      Math.max(paddedSize.y, 0.3),
-      Math.max(paddedSize.z, 0.3)
+      Math.max(paddedSize.x, ObjectPlacer.MIN_HIT_PROXY_DIM),
+      Math.max(paddedSize.y, ObjectPlacer.MIN_HIT_PROXY_DIM),
+      Math.max(paddedSize.z, ObjectPlacer.MIN_HIT_PROXY_DIM)
     );
     const geometry = new THREE.BoxGeometry(paddedSize.x, paddedSize.y, paddedSize.z);
     // Fully transparent material that doesn't render at all. The proxy is
@@ -253,7 +268,7 @@ export class ObjectPlacer {
 
       realModel.traverse((child) => {
         if (child instanceof THREE.Mesh) {
-          child.castShadow = false;
+          child.castShadow = true;
           child.receiveShadow = false;
         }
       });
@@ -351,10 +366,12 @@ export class ObjectPlacer {
         requestAnimationFrame(tick);
       } else {
         // Restore real model materials to opaque (perf: avoid transparent sorting)
+        const fadeMaterials: { mat: THREE.Material; baseOpacity: number }[] = [];
         for (const m of realMats) {
           m.opacity = 1;
           m.transparent = false;
           m.needsUpdate = true;
+          fadeMaterials.push({ mat: m, baseOpacity: m.opacity });
         }
         // Remove the placeholder
         this.scene.remove(placeholder);
@@ -375,6 +392,8 @@ export class ObjectPlacer {
           placedModel.boundingBox = new THREE.Box3().setFromObject(realModel);
           placedModel.isPlaceholder = false;
           placedModel.isLoading = false;
+          placedModel.fadeMaterials = fadeMaterials;
+          placedModel.proximityOpacity = 1;
           this.updateHitProxy(placedModel);
           this.syncContactShadow(placedModel);
           this.emit("model-loaded", { id, productId: placedModel.productId });
@@ -443,6 +462,33 @@ export class ObjectPlacer {
     return undefined;
   }
 
+  /**
+   * Test whether moving the given object to `candidatePos` would cause its
+   * bounding box to intersect any other placed object. Returns the ids of
+   * the objects that would be intersected.
+   */
+  wouldCollide(id: string, candidatePos: THREE.Vector3): string[] {
+    const dragged = this.placedModels.get(id);
+    if (!dragged) return [];
+    return this.collisionResolver.wouldCollide(
+      dragged.boundingBox,
+      candidatePos,
+      this.getAllPlacedModels().filter((m) => m.id !== id)
+    );
+  }
+
+  /**
+   * Check whether an arbitrary box placed at `candidatePos` would intersect
+   * any existing object. Used for the reticle placement pre-check.
+   */
+  wouldBoxCollide(box: THREE.Box3, candidatePos: THREE.Vector3): string[] {
+    return this.collisionResolver.wouldCollide(
+      box,
+      candidatePos,
+      this.getAllPlacedModels()
+    );
+  }
+
   updateTransform(
     id: string,
     position?: THREE.Vector3,
@@ -500,9 +546,9 @@ export class ObjectPlacer {
 
     const paddedSize = size.multiplyScalar(ObjectPlacer.HIT_PROXY_PADDING);
     paddedSize.set(
-      Math.max(paddedSize.x, 0.2),
-      Math.max(paddedSize.y, 0.2),
-      Math.max(paddedSize.z, 0.2)
+      Math.max(paddedSize.x, ObjectPlacer.MIN_HIT_PROXY_DIM),
+      Math.max(paddedSize.y, ObjectPlacer.MIN_HIT_PROXY_DIM),
+      Math.max(paddedSize.z, ObjectPlacer.MIN_HIT_PROXY_DIM)
     );
 
     placedModel.hitProxy.position.copy(center);
@@ -583,6 +629,99 @@ export class ObjectPlacer {
       this.removeObject(id);
     }
     this.emit("scene-cleared", {});
+  }
+
+  /**
+   * Fade a placed model as the camera gets very close, preventing the
+   * camera from clipping through the mesh and revealing its hollow interior.
+   * Call once per frame from the render loop with the active camera position.
+   */
+  updateProximityFade(cameraPos: THREE.Vector3): void {
+    for (const placed of this.placedModels.values()) {
+      // Placeholders are transient and already translucent; skip them to avoid
+      // interfering with the loading-ring pulse animation.
+      if (placed.isPlaceholder || placed.isLoading) continue;
+
+      const dist = placed.boundingBox.distanceToPoint(cameraPos);
+      const threshold =
+        placed.proximityOpacity < 1
+          ? ObjectPlacer.FADE_START + ObjectPlacer.FADE_HYSTERESIS
+          : ObjectPlacer.FADE_START;
+
+      let targetOpacity = 1;
+      if (dist < ObjectPlacer.FADE_END) {
+        targetOpacity = 0;
+      } else if (dist < threshold) {
+        const t = (dist - ObjectPlacer.FADE_END) / (threshold - ObjectPlacer.FADE_END);
+        // smoothstep
+        targetOpacity = t * t * (3 - 2 * t);
+      }
+
+      if (placed.proximityOpacity === targetOpacity) continue;
+      placed.proximityOpacity = targetOpacity;
+
+      const shadowBase = placed.contactShadow
+        ? (placed.contactShadow.material as THREE.MeshBasicMaterial).opacity /
+          (placed.proximityOpacity > 0.001 ? placed.proximityOpacity : 1)
+        : 0;
+
+      for (const { mat, baseOpacity } of placed.fadeMaterials) {
+        if (placed.proximityOpacity >= 0.999) {
+          mat.opacity = baseOpacity;
+          mat.transparent = false;
+        } else {
+          mat.transparent = true;
+          mat.opacity = baseOpacity * placed.proximityOpacity;
+        }
+        mat.needsUpdate = true;
+      }
+
+      if (placed.contactShadow) {
+        const shadowMat = placed.contactShadow.material as THREE.MeshBasicMaterial;
+        shadowMat.transparent = placed.proximityOpacity < 0.999;
+        shadowMat.opacity = Math.max(0, shadowBase * placed.proximityOpacity);
+      }
+    }
+  }
+
+  /**
+   * Recompute the derived transforms (bounding box, hit proxy, contact shadow)
+   * for a placed object without touching its position/rotation/scale. Used by
+   * the anchor manager after a drift-correcting pose update.
+   * Returns true if any derived state actually changed (epsilon-gated).
+   */
+  syncDerivedTransforms(id: string): boolean {
+    const placed = this.placedModels.get(id);
+    if (!placed) return false;
+
+    this.tempBox.setFromObject(placed.model);
+    const center = this.tempBox.getCenter(this.tempVec);
+    const oldCenter = placed.boundingBox.getCenter(this.tempVec2);
+    const changed =
+      center.distanceToSquared(oldCenter) > 1e-6 ||
+      placed.boundingBox.min.distanceToSquared(this.tempBox.min) > 1e-6 ||
+      placed.boundingBox.max.distanceToSquared(this.tempBox.max) > 1e-6;
+
+    if (!changed) return false;
+
+    placed.boundingBox.copy(this.tempBox);
+    this.syncHitProxyTransform(placed);
+    this.syncContactShadow(placed);
+    return true;
+  }
+
+  /**
+   * Adjust the baked contact-shadow (ambient occlusion) intensity globally.
+   * When dynamic shadows are active we dim the blob so the two don't
+   * double-darken the floor.
+   */
+  setContactShadowIntensity(intensity: number): void {
+    for (const placed of this.placedModels.values()) {
+      if (placed.contactShadow) {
+        const mat = placed.contactShadow.material as THREE.MeshBasicMaterial;
+        mat.opacity = intensity;
+      }
+    }
   }
 
   /**

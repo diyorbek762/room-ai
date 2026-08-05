@@ -7,19 +7,17 @@ import { ARSessionManager } from "@/ar/core/ARSessionManager";
 import { ARRenderer } from "@/ar/core/ARRenderer";
 import { ARCamera } from "@/ar/core/ARCamera";
 import { LightEstimator } from "@/ar/core/LightEstimator";
+import { DepthOcclusionManager } from "@/ar/core/DepthOcclusionManager";
 import { HitTestManager } from "@/ar/placement/HitTestManager";
 import { PlaneManager } from "@/ar/placement/PlaneManager";
 import { ObjectPlacer } from "@/ar/placement/ObjectPlacer";
+import { ShadowCatcher } from "@/ar/placement/ShadowCatcher";
+import { OcclusionManager } from "@/ar/placement/OcclusionManager";
 import { AnchorManager } from "@/ar/core/AnchorManager";
 import { TransformController } from "@/ar/interaction/TransformController";
 import { SceneSerializer } from "@/ar/persistence/SceneSerializer";
 import { ScenePersistence } from "@/ar/persistence/ScenePersistence";
-import { useARStore, useCartStore, useMeasurementStore } from "@/store";
-import { useSurfaceStore } from "@/store/useSurfaceStore";
-import { SurfacePainter } from "@/ar/decor/SurfacePainter";
-import { SceneUrlSerializer } from "@/ar/persistence/SceneUrlSerializer";
-import { BeforeAfterSlider } from "@/components/ar/BeforeAfterSlider";
-import { MeasurementVisualizer } from "@/ar/measurement/MeasurementVisualizer";
+import { useARStore, useCartStore } from "@/store";
 import {
   ARCameraStagerOverlay,
   type OverlayProduct,
@@ -27,21 +25,18 @@ import {
 } from "@/components/ar/ARCameraStagerOverlay";
 import demoCatalog from "@/data/demo-catalog";
 import { getModelUrl } from "@/lib/modelUrl";
-import type { CalloutAnchors } from "@/ar/measurement/DimensionCallouts";
-import { estimateWallHeight, isPointInPolygon } from "@/lib/measurementMath";
+import type { CalloutAnchors } from "@/ar/ui/DimensionCallouts";
 
 interface TouchState {
   startX: number;
   startY: number;
-  mode: "none" | "pending-place" | "pending-deselect" | "pending-drag" | "drag" | "pinch" | "pending-corner";
+  mode: "none" | "pending-place" | "pending-deselect" | "pending-drag" | "drag" | "pinch";
   dragObjectId: string | null;
   lastPinchDist: number;
   lastTwistAngle: number;
 }
 
 const DRAG_THRESHOLD = 10;
-const _proj = new THREE.Vector3();
-const _badgeMid = new THREE.Vector3();
 const _calloutProj = new THREE.Vector3();
 const _calloutAnchors: CalloutAnchors = {
   w: new THREE.Vector3(),
@@ -49,15 +44,10 @@ const _calloutAnchors: CalloutAnchors = {
   h: new THREE.Vector3(),
 };
 const _calloutSize = new THREE.Vector3();
-
-function writeBadge(el: HTMLElement, ndc: THREE.Vector3): void {
-  if (ndc.z < 1) {
-    el.style.transform = `translate3d(${(ndc.x * 0.5 + 0.5) * window.innerWidth}px, ${(ndc.y * -0.5 + 0.5) * window.innerHeight}px, 0)`;
-    el.classList.remove("hidden");
-  } else {
-    el.classList.add("hidden");
-  }
-}
+const _tagPos = new THREE.Vector3();
+const _placementBox = new THREE.Box3();
+const _placementMin = new THREE.Vector3();
+const _placementMax = new THREE.Vector3();
 
 function writeCalloutLabel(camera: THREE.Camera, anchor: THREE.Vector3, lengthM: number, id: string): void {
   const el = document.getElementById(id);
@@ -131,8 +121,9 @@ export default function ARPage() {
   const planeManagerRef = useRef<PlaneManager | null>(null);
   const hitTestManagerRef = useRef<HitTestManager | null>(null);
   const objectPlacerRef = useRef<ObjectPlacer | null>(null);
-  const surfacePainterRef = useRef<SurfacePainter | null>(null);
-  const measurementVisualizerRef = useRef<MeasurementVisualizer | null>(null);
+  const shadowCatcherRef = useRef<ShadowCatcher | null>(null);
+  const occlusionManagerRef = useRef<OcclusionManager | null>(null);
+  const depthOcclusionManagerRef = useRef<DepthOcclusionManager | null>(null);
   const anchorManagerRef = useRef<AnchorManager | null>(null);
   const transformControllerRef = useRef<TransformController | null>(null);
   const serializerRef = useRef<SceneSerializer>(new SceneSerializer());
@@ -151,23 +142,6 @@ export default function ARPage() {
     finishOpen: false,
   });
 
-  const syncSurfaces = useCallback(() => {
-    if (!surfacePainterRef.current) return;
-    const corners = useMeasurementStore.getState().corners;
-    const metrics = useMeasurementStore.getState().metrics;
-    const { selectedFloorPreset } = useSurfaceStore.getState();
-    surfacePainterRef.current.updateFloorSurface(corners, selectedFloorPreset);
-  }, []);
-
-  useEffect(() => {
-    const unsubMeas = useMeasurementStore.subscribe(syncSurfaces);
-    const unsubSurf = useSurfaceStore.subscribe(syncSurfaces);
-    return () => {
-      unsubMeas();
-      unsubSurf();
-    };
-  }, [syncSurfaces]);
-
   const touchRef = useRef<TouchState>({
     startX: 0,
     startY: 0,
@@ -181,9 +155,14 @@ export default function ARPage() {
     () => {}
   );
   const syncObjectToStoreRef = useRef<(id: string) => void>(() => {});
-  const lastHeightEstRef = useRef<number>(0);
-  const edgeTextCacheRef = useRef<number[]>([]);
   const placeCounterRef = useRef<number>(0);
+
+  // Adaptive shadow-quality state
+  const shadowQualityRef = useRef<"off" | "low" | "high">("high");
+  const lowFpsFramesRef = useRef<number>(0);
+  const highFpsFramesRef = useRef<number>(0);
+  const shadowFocusRef = useRef(new THREE.Vector3());
+  const shadowDirRef = useRef(new THREE.Vector3(5, 10, 7.5).normalize());
 
   const placedObjects = useARStore((s) => s.placedObjects);
   const placeObject = useARStore((s) => s.placeObject);
@@ -192,7 +171,6 @@ export default function ARPage() {
   const setScanStatus = useARStore((s) => s.setScanStatus);
   const router = useRouter();
   const cartAddItem = useCartStore((s) => s.addItem);
-  const measureMode = useMeasurementStore((s) => s.mode);
 
   useEffect(() => {
     selectedObjectIdRef.current = selectedObjectId;
@@ -202,19 +180,6 @@ export default function ARPage() {
   useEffect(() => {
     isARActiveRef.current = isARActive;
   }, [isARActive]);
-
-  useEffect(() => {
-    return useMeasurementStore.subscribe((state) => {
-      measurementVisualizerRef.current?.setCorners(state.corners);
-      measurementVisualizerRef.current?.setClosed(state.corners.length === 4);
-      transformControllerRef.current?.setRoomCorners(
-        state.corners.map((c) => ({ x: c[0], z: c[2] }))
-      );
-      if (state.mode === "idle" || state.roomConfirmed) {
-        measurementVisualizerRef.current?.clear();
-      }
-    });
-  }, []);
 
   const totalPriceUZS = placedObjects.reduce((sum, obj) => {
     const product = demoCatalog.find((p) => p.id === obj.productId);
@@ -260,10 +225,6 @@ export default function ARPage() {
       anchorManagerRef.current?.clear();
       rendererRef.current?.dispose();
       objectPlacerRef.current?.dispose();
-      surfacePainterRef.current?.dispose();
-      surfacePainterRef.current = null;
-      measurementVisualizerRef.current?.dispose();
-      measurementVisualizerRef.current = null;
       transformControllerRef.current?.dispose();
       persistenceRef.current.dispose();
     };
@@ -278,13 +239,17 @@ export default function ARPage() {
     const renderer = new ARRenderer(canvasRef.current);
     rendererRef.current = renderer;
 
-    // Create SurfacePainter & ObjectPlacer
-    const surfacePainter = new SurfacePainter(renderer.getScene());
-    surfacePainterRef.current = surfacePainter;
-    syncSurfaces();
+    // Configure dynamic shadows before any models are loaded.
+    renderer.configureShadows("high");
+
+    // Create shadow catcher and object placer
+    const shadowCatcher = new ShadowCatcher(renderer.getScene());
+    shadowCatcherRef.current = shadowCatcher;
 
     const objectPlacer = new ObjectPlacer(renderer.getScene(), renderer.getContactShadowTexture());
     objectPlacerRef.current = objectPlacer;
+    // Dim the baked AO blob so it complements rather than doubles the dynamic shadow.
+    objectPlacer.setContactShadowIntensity(0.35);
     objectPlacer.setProductDimsResolver(
       (pid) => ALL_PRODUCTS.find((p) => p.id === pid)?.dimensions ?? null
     );
@@ -346,6 +311,14 @@ export default function ARPage() {
     const planeManager = new PlaneManager();
     planeManagerRef.current = planeManager;
 
+    const occlusionManager = new OcclusionManager(renderer.getScene());
+    occlusionManager.setPlaneManager(planeManager);
+    occlusionManagerRef.current = occlusionManager;
+
+    const depthOcclusionManager = new DepthOcclusionManager(renderer.getScene());
+    depthOcclusionManager.init(session);
+    depthOcclusionManagerRef.current = depthOcclusionManager;
+
     const lightEstimator = new LightEstimator(
       renderer.getAmbientLight(),
       renderer.getHemisphereLight(),
@@ -382,15 +355,11 @@ export default function ARPage() {
     );
     transformControllerRef.current = transformController;
 
-    const measurementVisualizer = new MeasurementVisualizer(renderer.getScene());
-    measurementVisualizerRef.current = measurementVisualizer;
-
     renderer.showShadowPlane(true);
 
-    // Skip scanning phase — immediately ready and start calibration
+    // Skip scanning phase — immediately ready for tap-to-place
     setScanStatus("ready");
-    useMeasurementStore.getState().startCalibration();
-    setStatusMessage("Aim at corner 1/4 and tap capture");
+    setStatusMessage("Tap surface to place · drag to move");
 
     let guidanceCounter = 0;
     let lastFrameTime = 0;
@@ -401,9 +370,99 @@ export default function ARPage() {
       arCamera.updateFromXRFrame(frame, refSpace);
       lightEstimator.update(frame);
       planeManager.update(frame, refSpace);
-      anchorManager.update(frame, refSpace, objectPlacer.getAllPlacedModelsMap());
+      occlusionManagerRef.current?.update();
+      depthOcclusionManagerRef.current?.update(
+        frame,
+        refSpace,
+        Array.from(objectPlacer.getAllPlacedModelsMap().values())
+      );
+      anchorManager.update(frame, refSpace, objectPlacer.getAllPlacedModelsMap(), (id) => {
+        objectPlacer.syncDerivedTransforms(id);
+      });
 
       const hitDetected = hitTestManager.update(frame, refSpace);
+
+      // --- Collision reticle pre-check ---
+      if (hitDetected && !selectedObjectIdRef.current && !overlayStateRef.current.marketOpen && !overlayStateRef.current.finishOpen) {
+        const product = selectedProductRef.current;
+        if (product && product.placement !== "wall") {
+          const dims = product.dimensions;
+          _placementMin.set(-dims.w / 2, 0, -dims.d / 2);
+          _placementMax.set(dims.w / 2, dims.h, dims.d / 2);
+          _placementBox.set(_placementMin, _placementMax);
+          const colliders = objectPlacer.wouldBoxCollide(_placementBox, hitTestManager.getHitPosition());
+          hitTestManager.setReticleBlocked(colliders.length > 0);
+        } else {
+          hitTestManager.setReticleBlocked(false);
+        }
+      } else if (!hitDetected) {
+        hitTestManager.setReticleBlocked(false);
+      }
+      // -----------------------------------
+
+      // Fade objects when the camera gets very close (prevents hollow-mesh clipping).
+      objectPlacer.updateProximityFade(renderer.getCamera().position);
+
+      // --- Dynamic shadows & lighting ---
+      const floorY = planeManager.getReferenceFloorY();
+      shadowCatcherRef.current?.update(Number.isFinite(floorY) ? floorY : 0);
+
+      const lightDirOk = lightEstimator.getPrimaryLightDirection(shadowDirRef.current);
+      if (!lightDirOk) {
+        shadowDirRef.current.set(5, 10, 7.5).normalize();
+      }
+
+      // Shadow focus = centroid of placed objects, fallback to 2m in front of camera
+      const placedModels = objectPlacer.getAllPlacedModelsMap();
+      shadowFocusRef.current.set(0, 0, 0);
+      let count = 0;
+      if (placedModels) {
+        for (const [, m] of placedModels) {
+          shadowFocusRef.current.add(m.model.position);
+          count++;
+        }
+      }
+      if (count > 0) {
+        shadowFocusRef.current.divideScalar(count);
+      } else {
+        const cam = renderer.getCamera();
+        shadowFocusRef.current.copy(cam.position).addScaledVector(shadowDirRef.current, -2);
+      }
+      renderer.updateShadowRig(shadowFocusRef.current, shadowDirRef.current);
+
+      // Adaptive shadow quality: step down on sustained low fps, up on sustained high fps.
+      const fps = renderer.getFPS();
+      if (fps < 30) {
+        lowFpsFramesRef.current++;
+        highFpsFramesRef.current = 0;
+        if (lowFpsFramesRef.current > 3 * 60) {
+          const next: "off" | "low" | "high" =
+            shadowQualityRef.current === "high" ? "low" : "off";
+          if (next !== shadowQualityRef.current) {
+            shadowQualityRef.current = next;
+            renderer.configureShadows(next);
+            objectPlacer.setContactShadowIntensity(next === "off" ? 0.55 : 0.35);
+          }
+          lowFpsFramesRef.current = 0;
+        }
+      } else if (fps > 50) {
+        highFpsFramesRef.current++;
+        lowFpsFramesRef.current = 0;
+        if (highFpsFramesRef.current > 15 * 60) {
+          const next: "off" | "low" | "high" =
+            shadowQualityRef.current === "off" ? "low" : "high";
+          if (next !== shadowQualityRef.current) {
+            shadowQualityRef.current = next;
+            renderer.configureShadows(next);
+            objectPlacer.setContactShadowIntensity(0.35);
+          }
+          highFpsFramesRef.current = 0;
+        }
+      } else {
+        lowFpsFramesRef.current = 0;
+        highFpsFramesRef.current = 0;
+      }
+      // -----------------------------------
 
       const dtSec = lastFrameTime === 0 ? 0.016 : (time - lastFrameTime) / 1000;
       lastFrameTime = time;
@@ -411,32 +470,35 @@ export default function ARPage() {
       objectPlacerRef.current?.updateLoadingAnimation(time / 1000);
 
       // --- Update AR Price Tags ---
-      const placedModels = objectPlacerRef.current?.getAllPlacedModelsMap();
       const camera = renderer.getCamera();
       if (placedModels) {
         for (const [id, modelData] of placedModels.entries()) {
           const el = document.getElementById(`ar-tag-${id}`);
           if (el) {
             // Get world position of the object
-            const pos = new THREE.Vector3();
-            modelData.model.getWorldPosition(pos);
-            
+            _tagPos.set(0, 0, 0);
+            modelData.model.getWorldPosition(_tagPos);
+
             // Adjust Y so the tag is placed roughly above the object
-            // Using bounding box max.y is better, but a flat +1m is an okay fallback
             if (modelData.boundingBox) {
-              pos.y = modelData.boundingBox.max.y + 0.15;
+              _tagPos.y = modelData.boundingBox.max.y + 0.15;
             } else {
-              pos.y += 1.0; 
+              _tagPos.y += 1.0;
             }
 
-            pos.project(camera);
+            _tagPos.project(camera);
 
             // Check if the object is in front of the camera
-            if (pos.z < 1) {
-              const x = (pos.x * 0.5 + 0.5) * window.innerWidth;
-              const y = (pos.y * -0.5 + 0.5) * window.innerHeight;
+            if (_tagPos.z < 1) {
+              const x = (_tagPos.x * 0.5 + 0.5) * window.innerWidth;
+              const y = (_tagPos.y * -0.5 + 0.5) * window.innerHeight;
               el.style.transform = `translate3d(${x}px, ${y}px, 0)`;
-              el.classList.remove("hidden");
+              el.style.opacity = String(Math.max(0, modelData.proximityOpacity));
+              if (modelData.proximityOpacity < 0.05) {
+                el.classList.add("hidden");
+              } else {
+                el.classList.remove("hidden");
+              }
             } else {
               el.classList.add("hidden");
             }
@@ -465,63 +527,11 @@ export default function ARPage() {
       }
       // --------------------------
 
-      // --- Measurement badges ---
-      const mState = useMeasurementStore.getState();
-      const corners = mState.corners;
-      if (corners.length > 0) {
-        const camera = renderer.getCamera();
-        for (let i = 0; i < corners.length; i++) {
-          const el = document.getElementById(`measure-corner-${i}`);
-          if (!el) continue;
-          _proj.set(corners[i][0], corners[i][1] + 0.05, corners[i][2]).project(camera);
-          writeBadge(el, _proj);
-        }
-
-        const edgeTotal = corners.length === 4 ? 4 : corners.length - 1;
-        for (let i = 0; i < edgeTotal; i++) {
-          const el = document.getElementById(`measure-edge-${i}`);
-          if (!el) continue;
-          const a = corners[i];
-          const b = corners[(i + 1) % corners.length];
-          const len = Math.hypot(a[0] - b[0], a[2] - b[2]);
-          const cm = Math.round(len * 100);
-          if (edgeTextCacheRef.current[i] !== cm) {
-            edgeTextCacheRef.current[i] = cm;
-            el.textContent = `${(cm / 100).toFixed(2)} m`;
-          }
-          _badgeMid.set((a[0] + b[0]) / 2, (a[1] + b[1]) / 2 + 0.03, (a[2] + b[2]) / 2).project(camera);
-          writeBadge(el, _badgeMid);
-        }
-      }
-      // --------------------------
-
-      // --- Measurement preview line ---
-      if (mState.mode === "capturing" && mState.corners.length > 0 && mState.corners.length < 4) {
-        const last = mState.corners[mState.corners.length - 1];
-        const fresh = hitDetected && hitTestManager.getTimeSinceLastDetection() < 0.5;
-        measurementVisualizerRef.current?.setPreview(last, fresh ? hitTestManager.getHitPosition() : null);
-      } else {
-        measurementVisualizerRef.current?.setPreview(null, null);
-      }
-      // ---------------------------------
-
       // Update guidance message every 60 frames (~1s)
       guidanceCounter++;
       if (guidanceCounter % 60 === 0) {
-        // Wall height estimation feed
-        if (planeManager.isSupported()) {
-          const samples = planeManager.getVerticalPlanes().map((p) => ({ polygon: p.plane.polygon }));
-          const est = estimateWallHeight(samples);
-          if (est !== null && Math.abs(est - lastHeightEstRef.current) > 0.05) {
-            lastHeightEstRef.current = est;
-            useMeasurementStore.getState().setEstimatedHeight(est);
-          }
-        }
-
         if (selectedObjectIdRef.current) {
           // In edit mode — don't overwrite edit-mode status messages
-        } else if (useMeasurementStore.getState().mode === "capturing") {
-          // Calibration in progress — keep corner instructions shown by touch handlers
         } else if (hitTestManager.hasEverDetected()) {
           setStatusMessage("Tap surface to place · drag to move");
         }
@@ -575,6 +585,17 @@ export default function ARPage() {
         wallNormal
       );
 
+      // Lock the object to physical geometry with an XR anchor immediately.
+      // This fixes the drift where objects slide as ARCore refines the map.
+      const hm = hitTestManagerRef.current;
+      const am = anchorManagerRef.current;
+      if (am?.isSupported() && hm) {
+        const lastHit = hm.getLastHitTestResult();
+        if (lastHit && hm.getTimeSinceLastDetection() < 0.5) {
+          am.createAnchorFromHitTest(lastHit, id).catch(() => {});
+        }
+      }
+
       placeObject(id, product.id, product.modelUrl, [
         position.x,
         position.y,
@@ -610,16 +631,6 @@ export default function ARPage() {
       if (target.closest("button, a, [role='button'], input, select, textarea")) return;
       e.preventDefault();
       const touches = e.touches;
-
-      if (useMeasurementStore.getState().mode === "capturing") {
-        if (touches.length === 1) {
-          const t = touches[0];
-          touchRef.current.startX = t.clientX;
-          touchRef.current.startY = t.clientY;
-          touchRef.current.mode = "pending-corner";
-        }
-        return;
-      }
 
       if (touches.length === 1) {
         const t = touches[0];
@@ -678,13 +689,6 @@ export default function ARPage() {
         return;
       }
 
-      if (state.mode === "pending-corner") {
-        const t = touches[0];
-        const moved = Math.hypot(t.clientX - state.startX, t.clientY - state.startY);
-        if (moved > DRAG_THRESHOLD) state.mode = "none";
-        return;
-      }
-
       if (touches.length === 1) {
         const t = touches[0];
         if (state.mode === "pending-place" || state.mode === "pending-drag") {
@@ -728,9 +732,6 @@ export default function ARPage() {
             setSelectedObjectId(null);
           }
         }
-        else if (state.mode === "pending-corner") {
-          // Screen-tap capture disabled; use the dedicated Capture Corner button
-        }
         else if (state.mode === "pending-place") {
           const lastTouch = e.changedTouches[0];
           const hitId = lastTouch ? tc.hitTestObject(lastTouch.clientX, lastTouch.clientY) : null;
@@ -739,38 +740,36 @@ export default function ARPage() {
             tc.selectObject(hitId);
             setSelectedObjectId(hitId);
           } else if (tc.getSelectedId() === null) {
-            const ms = useMeasurementStore.getState();
-            if (ms.mode !== "done" || !ms.roomConfirmed) {
-              setStatusMessage("Complete room measurement first");
-            } else {
-              const hm = hitTestManagerRef.current;
-              if (hm && hm.hasEverDetected()) {
-                const productType = selectedProductRef.current.placement || "floor";
+            const hm = hitTestManagerRef.current;
+            if (hm && hm.hasEverDetected()) {
+              const productType = selectedProductRef.current.placement || "floor";
 
-                if (productType === "wall") {
-                  if (hm.isAimingAtWall()) {
-                    placeSelectedProductRef.current(
-                      hm.getWallHitPosition(),
-                      hm.getHitQuaternion(),
-                      "wall",
-                      hm.getWallHitNormal()
-                    );
-                  } else {
-                    setStatusMessage("Wall item — point camera at a wall");
-                  }
+              if (productType === "wall") {
+                if (hm.isAimingAtWall()) {
+                  placeSelectedProductRef.current(
+                    hm.getWallHitPosition(),
+                    hm.getHitQuaternion(),
+                    "wall",
+                    hm.getWallHitNormal()
+                  );
                 } else {
-                  // floor or floor-wall
-                  const pos = hm.getHitPosition();
-                  const corners2D = ms.corners.map((c) => ({ x: c[0], z: c[2] }));
-                  if (corners2D.length === 4 && !isPointInPolygon({ x: pos.x, z: pos.z }, corners2D)) {
-                    setStatusMessage("Cannot place outside room bounds");
-                  } else {
-                    placeSelectedProductRef.current(pos, hm.getHitQuaternion(), "floor");
-                  }
+                  setStatusMessage("Wall item — point camera at a wall");
                 }
               } else {
-                setStatusMessage("No surface detected — move camera slowly to scan");
+                // floor or floor-wall
+                const pos = hm.getHitPosition();
+                const normal = hm.getHitNormal();
+                const pm = planeManagerRef.current;
+                if (pm && !pm.isValidFloorPosition(pos, normal)) {
+                  setStatusMessage("Invalid floor surface — aim at a flat floor");
+                } else if (hm.isReticleBlocked()) {
+                  setStatusMessage("Space occupied — move to a free spot");
+                } else {
+                  placeSelectedProductRef.current(pos, hm.getHitQuaternion(), "floor");
+                }
               }
+            } else {
+              setStatusMessage("No surface detected — move camera slowly to scan");
             }
           }
         }
@@ -866,28 +865,6 @@ export default function ARPage() {
     setStatusMessage("Scene cleared");
   }, []);
 
-  const handleMeasureToggle = useCallback(() => {
-    const ms = useMeasurementStore.getState();
-    transformControllerRef.current?.deselect();
-    setSelectedObjectId(null);
-    ms.startCalibration();
-    measurementVisualizerRef.current?.clear();
-    setStatusMessage("Aim at corner 1/4 and tap capture");
-  }, []);
-
-  const captureCorner = useCallback(() => {
-    const hm = hitTestManagerRef.current;
-    if (hm && hm.hasEverDetected() && hm.getTimeSinceLastDetection() < 0.5) {
-      const pos = hm.getHitPosition();
-      useMeasurementStore.getState().addCorner([pos.x, pos.y, pos.z]);
-      const n = useMeasurementStore.getState().corners.length;
-      setStatusMessage(n < 4 ? `Corner ${n}/4 — aim and capture` : "Room captured");
-      if (n >= 4) useMeasurementStore.getState().finishCalibration();
-    } else {
-      setStatusMessage("No surface detected — aim at the floor");
-    }
-  }, []);
-
   const handleSaveAndFinish = useCallback(async () => {
     const storeObjects = useARStore.getState().placedObjects;
 
@@ -950,9 +927,13 @@ export default function ARPage() {
     }
     await sessionManagerRef.current?.endSession();
     rendererRef.current?.dispose();
+    shadowCatcherRef.current?.dispose();
+    shadowCatcherRef.current = null;
+    occlusionManagerRef.current?.dispose();
+    occlusionManagerRef.current = null;
+    depthOcclusionManagerRef.current?.dispose();
+    depthOcclusionManagerRef.current = null;
     objectPlacerRef.current?.dispose();
-    measurementVisualizerRef.current?.dispose();
-    measurementVisualizerRef.current = null;
     transformControllerRef.current?.dispose();
   }, []);
 
@@ -1036,9 +1017,6 @@ export default function ARPage() {
             onScaleUp={handleScaleUp}
             onScaleDown={handleScaleDown}
             onDeselect={handleDeselect}
-            measureMode={measureMode}
-            onMeasureToggle={handleMeasureToggle}
-            onCaptureCorner={captureCorner}
             finishOpen={finishOpen}
             finishItems={finishItems}
             onCloseFinish={() => setFinishOpen(false)}

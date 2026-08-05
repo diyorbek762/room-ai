@@ -157,6 +157,17 @@ export class LightEstimator {
     return this.supported;
   }
 
+  /**
+   * Return the current smoothed primary light direction (normalized).
+   * Useful for shadow rigging. Returns false if light estimation is unavailable
+   * so callers can fall back to a fixed default.
+   */
+  getPrimaryLightDirection(out: THREE.Vector3): boolean {
+    if (!this.supported) return false;
+    out.copy(this.targetDirPosition).normalize();
+    return true;
+  }
+
   /** Restore original light values and release the probe. */
   dispose(): void {
     this.ambientLight.color.copy(this.origAmbientColor);

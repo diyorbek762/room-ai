@@ -54,6 +54,7 @@ export class ARRenderer {
     this.directionalLight.position.set(5, 10, 7.5);
     this.directionalLight.castShadow = false;
     this.scene.add(this.directionalLight);
+    this.scene.add(this.directionalLight.target);
 
     // Build a shared contact-shadow texture once. ObjectPlacer will clone
     // this texture onto per-object shadow planes that follow each piece
@@ -110,6 +111,74 @@ export class ARRenderer {
 
   getFPS(): number {
     return this.fps;
+  }
+
+  /**
+   * Configure dynamic shadow rendering quality. Call once at session start
+   * before models are loaded to avoid material recompile jank.
+   */
+  configureShadows(quality: "off" | "low" | "high"): void {
+    const wasEnabled = this.renderer.shadowMap.enabled;
+    if (quality === "off") {
+      this.renderer.shadowMap.enabled = false;
+      this.directionalLight.castShadow = false;
+    } else {
+      this.renderer.shadowMap.enabled = true;
+      this.renderer.shadowMap.type =
+        quality === "high" ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
+      this.directionalLight.castShadow = true;
+      const size = quality === "high" ? 1024 : 512;
+      this.directionalLight.shadow.mapSize.set(size, size);
+      this.directionalLight.shadow.camera.left = -4;
+      this.directionalLight.shadow.camera.right = 4;
+      this.directionalLight.shadow.camera.top = 4;
+      this.directionalLight.shadow.camera.bottom = -4;
+      this.directionalLight.shadow.camera.near = 0.5;
+      this.directionalLight.shadow.camera.far = 25;
+      this.directionalLight.shadow.bias = -0.0004;
+      this.directionalLight.shadow.normalBias = 0.02;
+      this.directionalLight.shadow.camera.updateProjectionMatrix();
+    }
+    if (wasEnabled !== this.renderer.shadowMap.enabled) {
+      this.markAllMaterialsDirty();
+    }
+  }
+
+  /**
+   * Reposition the directional light and its shadow camera so the shadow
+   * cascade follows the scene action (placed-object centroid) while keeping
+   * the light direction aligned with the real-world primary light source.
+   */
+  updateShadowRig(focus: THREE.Vector3, lightDir: THREE.Vector3): void {
+    this.directionalLight.target.position.copy(focus);
+    this.directionalLight.target.updateMatrixWorld();
+
+    this.directionalLight.position.copy(focus).addScaledVector(lightDir, -8);
+    this.directionalLight.updateMatrixWorld();
+
+    if (this.directionalLight.shadow.camera) {
+      this.directionalLight.shadow.camera.position.copy(
+        this.directionalLight.position
+      );
+      this.directionalLight.shadow.camera.updateProjectionMatrix();
+    }
+  }
+
+  /**
+   * Runtime toggle of shadowMap.enabled requires all materials to be flagged
+   * for recompilation. Avoid calling after the session has started.
+   */
+  private markAllMaterialsDirty(): void {
+    this.scene.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        const mats = Array.isArray(child.material)
+          ? child.material
+          : [child.material];
+        for (const m of mats) {
+          m.needsUpdate = true;
+        }
+      }
+    });
   }
 
   /**

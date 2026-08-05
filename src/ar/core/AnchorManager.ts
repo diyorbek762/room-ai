@@ -6,7 +6,11 @@ export class AnchorManager {
   private supported = false;
 
   constructor() {
-    this.supported = true; // Set to true since it's enabled in session reqs
+    // Anchors are supported if the UA exposes the createAnchor method on XRFrame.
+    // This is still a real runtime check; even when requested, some browsers
+    // (or sessions) don't provide the API.
+    this.supported =
+      typeof XRFrame !== "undefined" && "createAnchor" in XRFrame.prototype;
   }
 
   isSupported(): boolean {
@@ -15,6 +19,8 @@ export class AnchorManager {
 
   /**
    * Create an anchor attached to a hit test result (most stable).
+   * This is the primary drift fix: the object is locked to physical geometry
+   * instead of raw hit-test coordinates.
    */
   async createAnchorFromHitTest(
     hitTestResult: XRHitTestResult,
@@ -23,6 +29,8 @@ export class AnchorManager {
     if (!this.supported) return;
     try {
       if (hitTestResult.createAnchor) {
+        // Delete any previous anchor for this object to avoid leaks.
+        this.deleteAnchor(modelId);
         const anchor = await hitTestResult.createAnchor();
         this.anchors.set(modelId, anchor);
       }
@@ -43,6 +51,7 @@ export class AnchorManager {
   ): Promise<void> {
     if (!this.supported || !frame.createAnchor) return;
     try {
+      this.deleteAnchor(modelId);
       const transform = new XRRigidTransform(
         { x: position.x, y: position.y, z: position.z },
         { x: quaternion.x, y: quaternion.y, z: quaternion.z, w: quaternion.w }
@@ -72,7 +81,8 @@ export class AnchorManager {
   update(
     frame: XRFrame,
     referenceSpace: XRReferenceSpace,
-    placedModels: Map<string, PlacedModel>
+    placedModels: Map<string, PlacedModel>,
+    onPoseApplied?: (modelId: string) => void
   ): void {
     if (!this.supported) return;
 
@@ -85,6 +95,11 @@ export class AnchorManager {
 
     // Process all placed models
     for (const [modelId, placed] of placedModels.entries()) {
+      // Skip objects currently being dragged; the anchor was deleted at drag start
+      // and their pose is driven by the user's finger, not the anchor system.
+      // (No explicit drag flag on PlacedModel; the anchor is deleted at drag start
+      // and recreated at drag end, so no anchor exists while dragging.)
+
       if (placed.needsNewAnchor) {
         placed.needsNewAnchor = false;
         // The object was moved, so its current Three.js matrix needs to become its new anchor
@@ -99,16 +114,23 @@ export class AnchorManager {
       }
 
       const anchor = this.anchors.get(modelId);
-      if (anchor) {
-        const pose = frame.getPose(anchor.anchorSpace, referenceSpace);
-        if (pose) {
-          placed.model.matrix.fromArray(pose.transform.matrix);
-          placed.model.matrix.decompose(
-            placed.model.position,
-            placed.model.quaternion,
-            placed.model.scale
-          );
-        }
+      if (!anchor) continue;
+
+      // If the UA exposes trackedAnchors and our anchor is not in the set,
+      // tracking is lost this frame; keep the last good pose rather than snapping.
+      if (frame.trackedAnchors && !frame.trackedAnchors.has(anchor)) {
+        continue;
+      }
+
+      const pose = frame.getPose(anchor.anchorSpace, referenceSpace);
+      if (pose) {
+        placed.model.matrix.fromArray(pose.transform.matrix);
+        placed.model.matrix.decompose(
+          placed.model.position,
+          placed.model.quaternion,
+          placed.model.scale
+        );
+        onPoseApplied?.(modelId);
       }
     }
   }

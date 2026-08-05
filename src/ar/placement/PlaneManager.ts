@@ -221,6 +221,11 @@ export class PlaneManager {
     return this.planes.size;
   }
 
+  /** All detected planes (horizontal and vertical). */
+  getAllPlanes(): DetectedPlane[] {
+    return Array.from(this.planes.values());
+  }
+
   dispose(): void {
     this.planes.clear();
     this.verticalPlanes.length = 0;

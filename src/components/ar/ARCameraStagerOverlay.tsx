@@ -3,10 +3,6 @@
 import { useState } from "react";
 import { cn, formatUZS } from "@/lib/format";
 import { useARStore } from "@/store/useARStore";
-import { useMeasurementStore } from "@/store";
-import { useSurfaceStore } from "@/store/useSurfaceStore";
-import { SURFACE_PRESETS, type SurfaceMaterialPreset } from "@/ar/decor/surfacePresets";
-import { MeasurementOverlay } from "./MeasurementOverlay";
 
 export interface OverlayProduct {
   id: string;
@@ -33,7 +29,6 @@ export interface OverlayFinishItem {
 const storeColors: Record<string, string> = {
   asaxiy: "bg-blue-500/90",
   olcha: "bg-orange-500/90",
-  surface: "bg-purple-500/90",
 };
 
 const categoryLabels: Record<string, string> = {
@@ -42,10 +37,9 @@ const categoryLabels: Record<string, string> = {
   tables: "Tables",
   beds: "Beds",
   shelving: "Shelving",
-  surfaces: "🎨 Surfaces (Pol & Devor)",
 };
 
-const CATEGORY_KEYS = ["sofas", "chairs", "tables", "beds", "shelving", "surfaces"] as const;
+const CATEGORY_KEYS = ["sofas", "chairs", "tables", "beds", "shelving"] as const;
 type CategoryKey = (typeof CATEGORY_KEYS)[number];
 
 export interface ARCameraStagerOverlayProps {
@@ -74,44 +68,11 @@ export interface ARCameraStagerOverlayProps {
   onScaleDown: () => void;
   onDeselect: () => void;
 
-  measureMode: "idle" | "capturing" | "done";
-  onMeasureToggle: () => void;
-  onCaptureCorner: () => void;
-
   finishOpen: boolean;
   finishItems: OverlayFinishItem[];
   onCloseFinish: () => void;
   onPlaceOrder: () => void;
 }
-
-const surfaceOverlayProducts: OverlayProduct[] = [
-  {
-    id: "surface-clear",
-    name: "Clear Camera Passthrough",
-    nameUz: "Tiniq Kamera (Materiallarni O'chirish)",
-    priceUZS: 0,
-    storeSlug: "surface",
-    storeName: "Passthrough",
-    modelUrl: "",
-    categorySlug: "surfaces",
-    dimensions: { w: 0, h: 0, d: 0 },
-    placement: "floor-wall",
-    productClass: "surface",
-  },
-  ...SURFACE_PRESETS.map((preset) => ({
-    id: preset.id,
-    name: preset.name,
-    nameUz: preset.nameUz,
-    priceUZS: preset.pricePerM2,
-    storeSlug: "surface",
-    storeName: "Surface Material",
-    modelUrl: "",
-    categorySlug: "surfaces",
-    dimensions: { w: 1, h: 1, d: 1 },
-    placement: "floor" as const,
-    productClass: "surface" as const,
-  })),
-];
 
 export function ARCameraStagerOverlay(props: ARCameraStagerOverlayProps) {
   const {
@@ -137,9 +98,6 @@ export function ARCameraStagerOverlay(props: ARCameraStagerOverlayProps) {
     onScaleUp,
     onScaleDown,
     onDeselect,
-    measureMode,
-    onMeasureToggle,
-    onCaptureCorner,
     finishOpen,
     finishItems,
     onCloseFinish,
@@ -150,17 +108,8 @@ export function ARCameraStagerOverlay(props: ARCameraStagerOverlayProps) {
   const [categoryFilter, setCategoryFilter] = useState<CategoryKey | "all">("all");
   const placedObjects = useARStore((s) => s.placedObjects);
   const scanStatus = useARStore((s) => s.scanStatus);
-  const corners = useMeasurementStore((s) => s.corners);
-  const roomConfirmed = useMeasurementStore((s) => s.roomConfirmed);
 
-  const selectedFloorPreset = useSurfaceStore((s) => s.selectedFloorPreset);
-  const selectedWallPreset = useSurfaceStore((s) => s.selectedWallPreset);
-  const selectFloorPreset = useSurfaceStore((s) => s.selectFloorPreset);
-  const selectWallPreset = useSurfaceStore((s) => s.selectWallPreset);
-
-  const allMarketProducts = [...products, ...surfaceOverlayProducts];
-
-  const filteredMarket = allMarketProducts.filter((p) => {
+  const filteredMarket = products.filter((p) => {
     if (categoryFilter !== "all" && p.categorySlug !== categoryFilter) return false;
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
@@ -219,35 +168,6 @@ export function ARCameraStagerOverlay(props: ARCameraStagerOverlayProps) {
         />
       </div>
 
-      {/* LAYER 0.5: Center Crosshair */}
-      {measureMode === "capturing" && (
-        <div className="absolute inset-0 pointer-events-none flex items-center justify-center z-20">
-          <div className="relative w-6 h-6">
-            <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-emerald-400 -translate-y-1/2 shadow-sm" />
-            <div className="absolute left-1/2 top-0 bottom-0 w-0.5 bg-emerald-400 -translate-x-1/2 shadow-sm" />
-          </div>
-        </div>
-      )}
-
-      {/* LAYER 0.75: Measurement Overlay (badges, banner, controls) */}
-      <MeasurementOverlay />
-
-      {/* LAYER 0.85: Capture Corner Button */}
-      {measureMode === "capturing" && (
-        <div className="absolute bottom-32 left-1/2 -translate-x-1/2 z-40 pointer-events-auto flex flex-col items-center gap-3">
-          <div className="bg-slate-900/80 backdrop-blur-md px-4 py-2 rounded-full border border-white/20 text-white font-bold text-sm shadow-xl">
-            Aim at corner {corners.length + 1}/4
-          </div>
-          <button
-            type="button"
-            onClick={onCaptureCorner}
-            className="w-20 h-20 bg-emerald-500 hover:bg-emerald-600 rounded-full border-4 border-white/20 shadow-lg shadow-emerald-500/30 flex items-center justify-center active:scale-95 transition-all"
-          >
-            <div className="w-16 h-16 border-2 border-white/50 rounded-full" />
-          </button>
-        </div>
-      )}
-
       {/* LAYER 1: Floating Header */}
       <div className="absolute top-4 left-4 right-4 z-30 flex items-center justify-between gap-2 pointer-events-auto">
         <div className="bg-slate-900/80 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-white/10 text-xs text-slate-200 font-medium flex items-center gap-2 min-w-0">
@@ -271,11 +191,9 @@ export function ARCameraStagerOverlay(props: ARCameraStagerOverlayProps) {
           <span className="truncate">
             {selectedObjectId
               ? `Editing: ${selectedProductName}`
-              : measureMode === "capturing"
-                ? `Aim at corner ${corners.length + 1}/4`
-                : hitTestReady
-                  ? "Tap or drag surface to place"
-                  : statusMessage}
+              : hitTestReady
+                ? "Tap or drag surface to place"
+                : statusMessage}
             <span className="text-slate-400"> • </span>
             <span className="text-slate-400">Objects: {placedObjectsCount}</span>
             {loadingCount > 0 && (
@@ -288,25 +206,10 @@ export function ARCameraStagerOverlay(props: ARCameraStagerOverlayProps) {
         </div>
 
         <div className="flex items-center gap-2 flex-shrink-0">
-          {measureMode === "done" && (
-            <button
-              type="button"
-              onClick={onMeasureToggle}
-              disabled={scanStatus !== "ready"}
-              className="font-bold px-4 py-2 rounded-xl text-xs active:scale-95 transition-all border bg-slate-700/90 text-slate-200 border-white/10 hover:bg-slate-600/90"
-            >
-              Re-measure
-            </button>
-          )}
-
           <button
             type="button"
             onClick={() => onMarketOpenChange(true)}
-            disabled={!roomConfirmed}
-            className={cn(
-              "bg-slate-900/80 backdrop-blur-md text-white font-bold px-4 py-2 rounded-xl border border-white/15 text-xs active:scale-95 transition-all",
-              roomConfirmed ? "hover:bg-slate-800" : "opacity-50 cursor-not-allowed"
-            )}
+            className="bg-slate-900/80 backdrop-blur-md text-white font-bold px-4 py-2 rounded-xl border border-white/15 text-xs active:scale-95 transition-all hover:bg-slate-800"
           >
             Market
           </button>
@@ -320,7 +223,7 @@ export function ARCameraStagerOverlay(props: ARCameraStagerOverlayProps) {
         </div>
       </div>
 
-      {/* PRICE SUMMARY PANEL (Moved to bottom right to avoid overlap with top banners) */}
+      {/* PRICE SUMMARY PANEL */}
       {totalPriceUZS > 0 && (
         <div className="absolute bottom-28 right-4 z-30 bg-slate-900/90 backdrop-blur-md rounded-xl border border-white/20 p-3 flex flex-col items-end shadow-xl min-w-[160px] pointer-events-none">
           <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 mb-0.5">Xona narxi</span>
@@ -451,10 +354,8 @@ export function ARCameraStagerOverlay(props: ARCameraStagerOverlayProps) {
         </div>
       )}
 
-      {/* LAYER 3 (Coverflow Carousel) removed — Market drawer is the single selection surface */}
-
-      {/* LAYER 5 (button part): Bottom Primary Action Button */}
-      {measureMode === "done" && roomConfirmed && (
+      {/* LAYER 5: Bottom Primary Action Button */}
+      {scanStatus === "ready" && !marketOpen && !finishOpen && (
         <div className="absolute bottom-4 left-4 right-4 z-30 pointer-events-auto">
           <button
             type="button"
@@ -526,67 +427,6 @@ export function ARCameraStagerOverlay(props: ARCameraStagerOverlayProps) {
             </div>
           ) : (
             filteredMarket.map((p) => {
-              if (p.productClass === "surface") {
-                const isClear = p.id === "surface-clear";
-                const preset = SURFACE_PRESETS.find((sp) => sp.id === p.id);
-                const isSelected = isClear
-                  ? !selectedFloorPreset && !selectedWallPreset
-                  : preset?.type === "floor"
-                  ? selectedFloorPreset?.id === preset.id
-                  : selectedWallPreset?.id === preset?.id;
-
-                return (
-                  <div
-                    key={p.id}
-                    className={cn(
-                      "bg-slate-800/60 border rounded-xl p-2.5 flex flex-col justify-between transition-all",
-                      isSelected ? "border-purple-400 bg-purple-500/20 ring-2 ring-purple-400/50" : "border-white/10"
-                    )}
-                  >
-                    <div className="relative w-full aspect-square rounded-lg bg-slate-950/80 flex flex-col items-center justify-center mb-2 overflow-hidden border border-white/10">
-                      {isClear ? (
-                        <span className="text-2xl">📷</span>
-                      ) : (
-                        <div
-                          className="w-12 h-12 rounded-full border-2 border-white/30 shadow-lg"
-                          style={{ backgroundColor: preset?.color || "#cccccc" }}
-                        />
-                      )}
-                      <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold text-white uppercase tracking-wider bg-purple-600/90">
-                        {p.storeName}
-                      </span>
-                    </div>
-
-                    <p className="text-white text-xs font-semibold leading-tight line-clamp-2 mb-0.5 min-h-[28px]">
-                      {p.nameUz || p.name}
-                    </p>
-
-                    <p className="text-purple-300 text-xs font-bold mb-2">
-                      {isClear ? "Passthrough (0 UZS)" : `${formatUZS(p.priceUZS)} / m²`}
-                    </p>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (isClear) {
-                          selectFloorPreset(null);
-                          selectWallPreset(null);
-                        } else if (preset) {
-                          if (preset.type === "floor") selectFloorPreset(preset);
-                          else selectWallPreset(preset);
-                        }
-                      }}
-                      className={cn(
-                        "w-full text-white text-[11px] font-bold py-2 rounded-lg active:scale-95 transition-all",
-                        isSelected ? "bg-purple-600 hover:bg-purple-700" : "bg-slate-700 hover:bg-slate-600"
-                      )}
-                    >
-                      {isSelected ? "Active Surface" : isClear ? "Clear All Surfaces" : "Apply Surface Material"}
-                    </button>
-                  </div>
-                );
-              }
-
               const w = Math.round(p.dimensions.w * 100);
               const h = Math.round(p.dimensions.h * 100);
               const d = Math.round(p.dimensions.d * 100);
@@ -650,7 +490,7 @@ export function ARCameraStagerOverlay(props: ARCameraStagerOverlayProps) {
       )}
 
       {/* LAYER 7: In-Camera Interaction Instructions (Top) */}
-      {measureMode === "done" && roomConfirmed && selectedProductName && !selectedObjectId && !marketOpen && !finishOpen && scanStatus === "ready" && (
+      {selectedProductName && !selectedObjectId && !marketOpen && !finishOpen && scanStatus === "ready" && (
         <div className="absolute top-28 left-1/2 -translate-x-1/2 z-30 pointer-events-none w-[90%] max-w-sm flex justify-center">
           <div className="bg-slate-900/80 backdrop-blur-md px-3 py-2 rounded-xl border border-white/10 text-[11px] text-slate-200 text-center shadow-lg">
             <span className="text-emerald-400 block mb-0.5 font-semibold">▸ {selectedProductName}</span>
@@ -666,7 +506,7 @@ export function ARCameraStagerOverlay(props: ARCameraStagerOverlayProps) {
       )}
 
       {/* Hint in edit mode */}
-      {measureMode === "done" && roomConfirmed && selectedObjectId && !marketOpen && !finishOpen && scanStatus === "ready" && (
+      {selectedObjectId && !marketOpen && !finishOpen && scanStatus === "ready" && (
         <div className="absolute top-28 left-1/2 -translate-x-1/2 z-30 pointer-events-none w-[90%] max-w-sm flex justify-center">
           <div className="bg-emerald-500/20 backdrop-blur-md px-3 py-2 rounded-xl border border-emerald-400/40 text-[11px] text-emerald-200 text-center shadow-lg">
             <span className="text-emerald-300 font-semibold block mb-0.5">● Editing</span>

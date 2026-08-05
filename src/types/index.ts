@@ -47,13 +47,6 @@ export type PlacementType = "floor" | "wall" | "floor-wall";
 
 export type ProductClass = "mass" | "modular" | "surface";
 
-export interface RoomMetrics {
-  floorAreaM2: number;
-  wallAreaM2: number;
-  perimeterM: number;
-  ceilingHeightM: number;
-}
-
 export interface DemoCatalogEntry {
   id: string;
   name: string;

@@ -22,6 +22,7 @@ export class HitTestManager {
   // Wall hit-test state
   private planeManager: PlaneManager | null = null;
   private aimingAtWall = false;
+  private reticleBlocked = false;
   private wallHitNormal = new THREE.Vector3();
   private wallHitPosition = new THREE.Vector3();
 
@@ -189,9 +190,16 @@ export class HitTestManager {
     return false;
   }
 
+  setReticleBlocked(blocked: boolean): void {
+    this.reticleBlocked = blocked;
+    this.updateReticleAppearance();
+  }
+
   private updateReticleAppearance(): void {
     let color: number;
-    if (this.aimingAtWall) {
+    if (this.reticleBlocked) {
+      color = HitTestManager.INVALID_COLOR;
+    } else if (this.aimingAtWall) {
       color = HitTestManager.WALL_COLOR;
     } else {
       // Check if this is a valid floor surface
@@ -242,6 +250,10 @@ export class HitTestManager {
 
   isReticleVisible(): boolean {
     return this.reticleVisible;
+  }
+
+  isReticleBlocked(): boolean {
+    return this.reticleBlocked;
   }
 
   getLastHitTestResult(): XRHitTestResult | null {

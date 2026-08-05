@@ -3,8 +3,8 @@ import type { ObjectPlacer, PlacedModel } from "../placement/ObjectPlacer";
 import type { PlaneManager } from "../placement/PlaneManager";
 import type { AnchorManager } from "../core/AnchorManager";
 import type { ProductClass } from "@/types";
-import { DimensionCallouts, type CalloutAnchors } from "../measurement/DimensionCallouts";
-import { isPointInPolygon, type Point2D } from "@/lib/measurementMath";
+import { DimensionCallouts, type CalloutAnchors } from "../ui/DimensionCallouts";
+import { CollisionResolver } from "../placement/CollisionResolver";
 
 export interface GestureState {
   isDragging: boolean;
@@ -34,7 +34,13 @@ export class TransformController {
   private highlightPulsePhase: number = 0;
   private scene: THREE.Scene;
   private callouts: DimensionCallouts;
-  private roomCorners: Point2D[] = [];
+  private collisionResolver = new CollisionResolver();
+  private collisionActive = false;
+  private gestureSnapshot: {
+    position: THREE.Vector3;
+    rotation: THREE.Euler;
+    scale: THREE.Vector3;
+  } | null = null;
 
   // Reusable objects to avoid per-frame allocations
   private _mouse = new THREE.Vector2();
@@ -100,6 +106,7 @@ export class TransformController {
     if (id === this.selectedId) return;
     this.removeHighlight();
     this.selectedId = id;
+    this.collisionActive = false;
 
     if (id) {
       const placedModel = this.placer.getPlacedModel(id);
@@ -121,8 +128,16 @@ export class TransformController {
     return this.renderer.xr.isPresenting ? this.renderer.xr.getCamera() : this.camera;
   }
 
+  // Reusable arrays for raycast target collection (avoid per-tap allocation)
+  private _meshTargets: THREE.Object3D[] = [];
+  private _proxyTargets: THREE.Object3D[] = [];
+  private _screenAABB = new THREE.Box2();
+
   /**
    * Cast a screen-space ray and find the topmost placed object under the cursor.
+   * Priority: 1) actual visible mesh triangles, 2) tight hit proxy, 3) screen-space
+   * fallback constrained to the model's projected AABB. This prevents the old
+   * "fat finger" bug where a huge invisible proxy swallowed taps on empty floor.
    * Returns the model id or null if no object was hit.
    */
   hitTestObject(screenX: number, screenY: number): string | null {
@@ -131,52 +146,99 @@ export class TransformController {
       -(screenY / window.innerHeight) * 2 + 1
     );
 
-    this.raycaster.setFromCamera(this._mouse, this.getActiveCamera());
-    const targets = this.placer.getRaycastTargets();
-    const intersects = this.raycaster.intersectObjects(targets, true);
+    const camera = this.getActiveCamera();
+    this.raycaster.setFromCamera(this._mouse, camera);
+    const models = this.placer.getAllPlacedModels();
+    if (models.length === 0) return null;
 
-    if (intersects.length > 0) {
-      let obj: THREE.Object3D | null = intersects[0].object;
+    // 1. Precise geometry raycast against visible meshes.
+    this._meshTargets.length = 0;
+    for (const placed of models) this._meshTargets.push(placed.model);
+    const meshHits = this.raycaster.intersectObjects(this._meshTargets, true);
+    if (meshHits.length > 0) {
+      let obj: THREE.Object3D | null = meshHits[0].object;
       while (obj) {
-        for (const model of this.placer.getAllPlacedModels()) {
-          if (model.hitProxy === obj || model.model === obj) {
-            return model.id;
-          }
+        for (const placed of models) {
+          if (placed.model === obj) return placed.id;
         }
         obj = obj.parent;
       }
     }
 
-    // Screen-space fallback: if the world-space ray missed all proxies,
-    // find the placed model whose projected center is closest to the tap
-    // within a generous threshold. This catches near-misses where the user
-    // tapped just outside the proxy box (e.g. the very bottom edge of a
-    // tall lamp, or a sofa arm).
-    return this.screenSpaceHitTest(screenX, screenY);
+    // 2. Tight hit-proxy raycast.
+    this._proxyTargets.length = 0;
+    for (const placed of models) this._proxyTargets.push(placed.hitProxy);
+    const proxyHits = this.raycaster.intersectObjects(this._proxyTargets, true);
+    if (proxyHits.length > 0) {
+      let obj: THREE.Object3D | null = proxyHits[0].object;
+      while (obj) {
+        for (const placed of models) {
+          if (placed.hitProxy === obj) return placed.id;
+        }
+        obj = obj.parent;
+      }
+    }
+
+    // 3. Screen-space fallback: tap must be inside the projected AABB and
+    // closest to its center. Threshold tightened from 12% to 8%.
+    return this.screenSpaceHitTest(screenX, screenY, camera, models);
   }
 
   /**
-   * Project each placed model's world-space center to screen space and
-   * find the closest one within a threshold distance (in pixels). This
-   * is a forgiving fallback for taps that just miss the 3D raycast.
+   * Project each placed model's bounding box to screen space. Only consider
+   * taps that fall inside the 2D AABB, then pick the closest center. This
+   * gives fat-finger forgiveness without selecting a neighbor when the user
+   * taps empty floor to place a new object.
    */
-  private screenSpaceHitTest(screenX: number, screenY: number): string | null {
-    const models = this.placer.getAllPlacedModels();
+  private screenSpaceHitTest(
+    screenX: number,
+    screenY: number,
+    camera: THREE.Camera,
+    models: PlacedModel[]
+  ): string | null {
     if (models.length === 0) return null;
 
-    // Threshold scales with screen size: ~12% of the smaller dimension
-    const threshold = Math.min(window.innerWidth, window.innerHeight) * 0.12;
+    // Threshold scales with screen size: ~8% of the smaller dimension
+    const threshold = Math.min(window.innerWidth, window.innerHeight) * 0.08;
 
     let bestId: string | null = null;
     let bestDist = threshold;
 
     for (const placed of models) {
-      // Use the world-space AABB center for projection
-      const center = placed.boundingBox.getCenter(this._center);
-      this._projected.copy(center).project(this.getActiveCamera());
-      if (this._projected.z > 1 || this._projected.z < -1) continue; // behind camera or clipped
-      const px = (this._projected.x * 0.5 + 0.5) * window.innerWidth;
-      const py = (-this._projected.y * 0.5 + 0.5) * window.innerHeight;
+      // Build 2D screen-space AABB from the bounding box corners
+      this._screenAABB.makeEmpty();
+      const min = placed.boundingBox.min;
+      const max = placed.boundingBox.max;
+      for (let ix = 0; ix <= 1; ix++) {
+        for (let iy = 0; iy <= 1; iy++) {
+          for (let iz = 0; iz <= 1; iz++) {
+            this._projected.set(
+              ix ? max.x : min.x,
+              iy ? max.y : min.y,
+              iz ? max.z : min.z
+            ).project(camera);
+            if (this._projected.z > 1) continue;
+            this._projected.x = (this._projected.x * 0.5 + 0.5) * window.innerWidth;
+            this._projected.y = (-this._projected.y * 0.5 + 0.5) * window.innerHeight;
+            this._screenAABB.expandByPoint(this._projected);
+          }
+        }
+      }
+
+      if (this._screenAABB.isEmpty()) continue;
+      if (
+        screenX < this._screenAABB.min.x ||
+        screenX > this._screenAABB.max.x ||
+        screenY < this._screenAABB.min.y ||
+        screenY > this._screenAABB.max.y
+      ) {
+        continue;
+      }
+
+      const center = placed.boundingBox.getCenter(this._center).project(camera);
+      if (center.z > 1) continue;
+      const px = (center.x * 0.5 + 0.5) * window.innerWidth;
+      const py = (-center.y * 0.5 + 0.5) * window.innerHeight;
       const dx = px - screenX;
       const dy = py - screenY;
       const dist = Math.sqrt(dx * dx + dy * dy);
@@ -228,29 +290,33 @@ export class TransformController {
       
       const hit = this.raycaster.ray.intersectPlane(this.wallPlane, this._intersection);
       if (hit) {
-        if (this.roomCorners.length === 4) {
-          if (!isPointInPolygon({ x: this._intersection.x, z: this._intersection.z }, this.roomCorners)) {
-            return;
-          }
-        }
         this.placer.updateTransform(this.selectedId, this._intersection);
         this.updateHighlightPosition(placedModel);
       }
     } else {
       // Floor item: drag along the floor plane
       const hit = this.raycaster.ray.intersectPlane(this.floorPlane, this._intersection);
-      
+
       if (hit) {
-        if (this.roomCorners.length === 4) {
-          if (!isPointInPolygon({ x: this._intersection.x, z: this._intersection.z }, this.roomCorners)) {
-            return;
+        // Object-to-object collision: slide around other floor objects.
+        const others = this.placer.getAllPlacedModels().filter((m) => m.id !== this.selectedId);
+        const resolved = this.collisionResolver.resolveFloorDrag(
+          placedModel,
+          this._intersection,
+          others
+        );
+        const wasColliding = this.collisionActive;
+        this.collisionActive = resolved.collidedIds.length > 0;
+        if (!wasColliding && this.collisionActive) {
+          try {
+            navigator.vibrate?.(10);
+          } catch {
+            // ignore
           }
         }
-        // We've removed the aggressive wall physics collision here because ARCore often
-        // detects false walls (like table edges or noise) which causes the object
-        // to get stuck and push away from the user incorrectly.
-        this.placer.updateTransform(this.selectedId, this._intersection);
+        this.placer.updateTransform(this.selectedId, resolved.position);
         this.updateHighlightPosition(placedModel);
+        this.setHighlightColor(this.collisionActive ? 0xef4444 : 0x10b981);
       }
     }
 
@@ -279,6 +345,7 @@ export class TransformController {
     if (!this.selectedId) return;
     this.gestureState.isRotating = true;
     this.gestureState.lastTwistAngle = angle;
+    this.takeGestureSnapshot();
   }
 
   onRotateMove(angle: number): void {
@@ -299,12 +366,14 @@ export class TransformController {
 
   onRotateEnd(): void {
     this.gestureState.isRotating = false;
+    this.resolveGestureCollision();
   }
 
   onScaleStart(distance: number): void {
     if (!this.selectedId || this.isScaleLocked()) return;
     this.gestureState.isScaling = true;
     this.gestureState.lastPinchDist = distance;
+    this.takeGestureSnapshot();
   }
 
   onScaleMove(distance: number): void {
@@ -330,6 +399,57 @@ export class TransformController {
 
   onScaleEnd(): void {
     this.gestureState.isScaling = false;
+    this.resolveGestureCollision();
+  }
+
+  private takeGestureSnapshot(): void {
+    if (!this.selectedId) return;
+    const placed = this.placer.getPlacedModel(this.selectedId);
+    if (!placed) return;
+    this.gestureSnapshot = {
+      position: placed.model.position.clone(),
+      rotation: placed.model.rotation.clone(),
+      scale: placed.model.scale.clone(),
+    };
+  }
+
+  private resolveGestureCollision(): void {
+    if (!this.selectedId || !this.gestureSnapshot) return;
+    const placed = this.placer.getPlacedModel(this.selectedId);
+    if (!placed || placed.surfaceType === "wall") {
+      this.gestureSnapshot = null;
+      return;
+    }
+    // Update bounding box after rotation/scale before checking.
+    this.placer.updateTransform(this.selectedId);
+    const colliders = this.placer.wouldCollide(this.selectedId, placed.model.position);
+    if (colliders.length > 0) {
+      // Revert to pre-gesture transform and push out if possible.
+      this.placer.updateTransform(
+        this.selectedId,
+        this.gestureSnapshot.position,
+        this.gestureSnapshot.rotation,
+        this.gestureSnapshot.scale
+      );
+      const resolved = this.collisionResolver.resolveFloorDrag(
+        placed,
+        placed.model.position,
+        this.placer.getAllPlacedModels().filter((m) => m.id !== this.selectedId)
+      );
+      this.placer.updateTransform(this.selectedId, resolved.position);
+      this.collisionActive = resolved.collidedIds.length > 0;
+    } else {
+      this.collisionActive = false;
+    }
+    this.setHighlightColor(this.collisionActive ? 0xef4444 : 0x10b981);
+    this.updateHighlightPosition(placed);
+    this.gestureSnapshot = null;
+  }
+
+  private setHighlightColor(colorHex: number): void {
+    if (!this.highlightMesh) return;
+    const mat = this.highlightMesh.material as THREE.LineDashedMaterial;
+    mat.color.setHex(colorHex);
   }
 
   rotateSelectedByAngle(angleRad: number): void {
@@ -389,12 +509,6 @@ export class TransformController {
     this.selectedId = null;
     return id;
   }
-
-  public setRoomCorners(corners: Point2D[]): void {
-    this.roomCorners = corners;
-  }
-
-
 
   /**
    * Update the pulsing animation of the highlight. Call from the render loop.

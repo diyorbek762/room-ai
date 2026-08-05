@@ -34,11 +34,21 @@ export class ARSessionManager {
     }
 
     const requiredFeatures: string[] = ["hit-test", "local-floor"];
-    const optionalFeatures: string[] = ["dom-overlay", "anchors", "plane-detection", "light-estimation"];
+    const optionalFeatures: string[] = [
+      "dom-overlay",
+      "anchors",
+      "plane-detection",
+      "light-estimation",
+      "depth-sensing",
+    ];
 
     const sessionInit: XRSessionInit = {
       requiredFeatures,
       optionalFeatures,
+      depthSensing: {
+        usagePreference: ["cpu-optimized", "gpu-optimized"],
+        dataFormatPreference: ["luminance-alpha", "float32"],
+      },
     };
 
     if (overlayElement) {
@@ -52,7 +62,11 @@ export class ARSessionManager {
       try {
         const fallbackInit: XRSessionInit = {
           requiredFeatures: [],
-          optionalFeatures: ["hit-test", "local-floor", "dom-overlay", "anchors", "plane-detection"],
+          optionalFeatures: ["hit-test", "local-floor", "dom-overlay", "anchors", "plane-detection", "depth-sensing"],
+          depthSensing: {
+            usagePreference: ["cpu-optimized", "gpu-optimized"],
+            dataFormatPreference: ["luminance-alpha", "float32"],
+          },
         };
         if (overlayElement) {
           fallbackInit.domOverlay = { root: overlayElement };
