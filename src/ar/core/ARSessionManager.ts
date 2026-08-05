@@ -72,9 +72,32 @@ export class ARSessionManager {
           fallbackInit.domOverlay = { root: overlayElement };
         }
         this.session = await navigator.xr.requestSession("immersive-ar", fallbackInit);
-      } catch (err: unknown) {
-        console.error("WebXR requestSession failed:", err);
-        throw err;
+      } catch {
+        try {
+          const barebonesInit: XRSessionInit = {
+            requiredFeatures: [],
+            optionalFeatures: ["hit-test", "local-floor", "dom-overlay", "anchors", "plane-detection"],
+          };
+          if (overlayElement) {
+            barebonesInit.domOverlay = { root: overlayElement };
+          }
+          this.session = await navigator.xr.requestSession("immersive-ar", barebonesInit);
+        } catch {
+          try {
+            // Ultimate fallback: absolutely no advanced ARCore features except hit-test
+            const ultimateInit: XRSessionInit = {
+              requiredFeatures: [],
+              optionalFeatures: ["hit-test", "dom-overlay"],
+            };
+            if (overlayElement) {
+              ultimateInit.domOverlay = { root: overlayElement };
+            }
+            this.session = await navigator.xr.requestSession("immersive-ar", ultimateInit);
+          } catch (err: unknown) {
+            console.error("WebXR requestSession failed on all fallbacks:", err);
+            throw err;
+          }
+        }
       }
     }
 
