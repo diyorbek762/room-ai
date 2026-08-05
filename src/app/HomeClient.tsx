@@ -28,7 +28,7 @@ export function HomeClient({ products, categories }: HomeClientProps) {
     if (typeof navigator !== "undefined" && "xr" in navigator) {
       navigator.xr!.isSessionSupported("immersive-ar").then(setIsSupported);
     } else {
-      setIsSupported(false);
+      Promise.resolve().then(() => setIsSupported(false));
     }
 
     // Start pre-caching 3D models in background

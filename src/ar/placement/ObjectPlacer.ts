@@ -2,7 +2,6 @@ import * as THREE from "three";
 import { GLTFLoader, type GLTF } from "three/addons/loaders/GLTFLoader.js";
 import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
 import { getCachedModel } from "@/lib/modelCache";
-import type { PlacementType } from "@/types";
 
 export interface PlacedModel {
   id: string;
@@ -68,6 +67,7 @@ export class ObjectPlacer {
   private tempBox = new THREE.Box3();
   private tempVec = new THREE.Vector3();
   private events: EventTarget = new EventTarget();
+  private productDimsResolver: ((productId: string) => { w: number; h: number; d: number } | null) | null = null;
 
   addEventListener(type: PlacerEvent["type"], handler: (e: Event) => void): void {
     this.events.addEventListener(type, handler);
@@ -75,6 +75,10 @@ export class ObjectPlacer {
 
   removeEventListener(type: PlacerEvent["type"], handler: (e: Event) => void): void {
     this.events.removeEventListener(type, handler);
+  }
+
+  setProductDimsResolver(fn: (productId: string) => { w: number; h: number; d: number } | null): void {
+    this.productDimsResolver = fn;
   }
 
   private emit(type: PlacerEvent["type"], detail: Omit<PlacerEvent, "type">): void {
@@ -87,7 +91,7 @@ export class ObjectPlacer {
    * as a hit, so users don't accidentally place a duplicate when they meant
    * to select.
    */
-  private static readonly HIT_PROXY_PADDING = 1.4;
+  private static readonly HIT_PROXY_PADDING = 2.0;
 
   constructor(scene: THREE.Scene, contactShadowTexture?: THREE.CanvasTexture) {
     this.scene = scene;
@@ -222,7 +226,7 @@ export class ObjectPlacer {
   ): Promise<void> {
     try {
       // Try cache first — instant if pre-cached
-      let buffer = await getCachedModel(modelUrl);
+      const buffer = await getCachedModel(modelUrl);
       let arrayBuffer: ArrayBuffer;
 
       if (buffer) {
@@ -258,6 +262,17 @@ export class ObjectPlacer {
       // This gives us the true bottom of the model geometry.
       const localBBox = new THREE.Box3().setFromObject(realModel);
       const localMinY = localBBox.min.y;
+
+      // Normalize off-scale GLBs against catalog dimensions.
+      const expected = this.productDimsResolver?.(productId);
+      if (expected) {
+        localBBox.getSize(this.tempVec);
+        const dev = Math.abs(this.tempVec.x - expected.w) / expected.w;
+        if (dev > 0.15) {
+          const factor = expected.w / this.tempVec.x;
+          scl.multiplyScalar(factor);
+        }
+      }
 
       realModel.position.copy(pos);
       realModel.quaternion.copy(quat);
@@ -515,12 +530,11 @@ export class ObjectPlacer {
     return targets;
   }
 
-  private createPlaceholder(productId: string, surfaceType: "floor" | "wall" = "floor"): THREE.Group {
+  private createPlaceholder(productId: string, _surfaceType: "floor" | "wall" = "floor"): THREE.Group {
     const group = new THREE.Group();
     const dims = FURNITURE_DIMS[productId] || [0.5, 0.5, 0.5];
     const [w, h, d] = dims;
 
-    const colorKey = productId.split("-")[0];
     const categoryMap: Record<string, string> = {
       "01": "sofas", "02": "chairs", "03": "chairs", "04": "tables",
       "05": "tables", "06": "beds", "07": "beds", "08": "shelving",

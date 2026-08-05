@@ -45,6 +45,15 @@ export interface ProductDimensions {
 
 export type PlacementType = "floor" | "wall" | "floor-wall";
 
+export type ProductClass = "mass" | "modular" | "surface";
+
+export interface RoomMetrics {
+  floorAreaM2: number;
+  wallAreaM2: number;
+  perimeterM: number;
+  ceilingHeightM: number;
+}
+
 export interface DemoCatalogEntry {
   id: string;
   name: string;
@@ -58,4 +67,6 @@ export interface DemoCatalogEntry {
   license: string;
   /** Where this item can be placed in AR. Defaults to "floor" when absent. */
   placement?: PlacementType;
+  /** Class of product for scale/interaction rules. Defaults to "mass" when absent. */
+  productClass?: ProductClass;
 }

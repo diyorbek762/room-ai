@@ -11,6 +11,7 @@ export class ARRenderer {
   private frameCount = 0;
   private lastTime = 0;
   private fps = 60;
+  private pixelRatioCap: number;
 
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({
@@ -21,8 +22,8 @@ export class ARRenderer {
       preserveDrawingBuffer: false,
     });
     const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
-    const pixelRatioCap = isMobile ? 1.5 : 2;
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, pixelRatioCap));
+    this.pixelRatioCap = isMobile ? 1.5 : 2;
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this.pixelRatioCap));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.xr.enabled = true;
     // Dynamic shadows disabled for mobile GPU; we use baked contact shadows
@@ -128,6 +129,27 @@ export class ARRenderer {
         this.frameCount = 0;
         this.lastTime = time;
       }
+
+      // Sync non-XR canvas size to the viewport every frame. During an active
+      // XR session three.js's WebXRManager owns the framebuffer, so we skip
+      // manual resize there to avoid splitting the WebGL output.
+      if (!this.renderer.xr.isPresenting) {
+        const canvas = this.renderer.domElement;
+        const targetWidth = window.innerWidth;
+        const targetHeight = window.innerHeight;
+        const targetPixelRatio = Math.min(window.devicePixelRatio, this.pixelRatioCap);
+        const needsResize =
+          canvas.clientWidth !== targetWidth ||
+          canvas.clientHeight !== targetHeight ||
+          this.renderer.getPixelRatio() !== targetPixelRatio;
+        if (needsResize) {
+          this.renderer.setPixelRatio(targetPixelRatio);
+          this.renderer.setSize(targetWidth, targetHeight);
+          this.camera.aspect = targetWidth / targetHeight;
+          this.camera.updateProjectionMatrix();
+        }
+      }
+
       if (callback) callback(time, frame);
     });
   }
@@ -137,6 +159,7 @@ export class ARRenderer {
   }
 
   private handleResize = (): void => {
+    if (this.renderer.xr.isPresenting) return;
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(window.innerWidth, window.innerHeight);

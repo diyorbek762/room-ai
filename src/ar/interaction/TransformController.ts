@@ -1,6 +1,10 @@
 import * as THREE from "three";
 import type { ObjectPlacer, PlacedModel } from "../placement/ObjectPlacer";
 import type { PlaneManager } from "../placement/PlaneManager";
+import type { AnchorManager } from "../core/AnchorManager";
+import type { ProductClass } from "@/types";
+import { DimensionCallouts, type CalloutAnchors } from "../measurement/DimensionCallouts";
+import { isPointInPolygon, type Point2D } from "@/lib/measurementMath";
 
 export interface GestureState {
   isDragging: boolean;
@@ -16,7 +20,8 @@ export class TransformController {
   private placer: ObjectPlacer;
   private camera: THREE.PerspectiveCamera;
   private planeManager: PlaneManager | null = null;
-  private anchorManager: any | null = null;
+  private anchorManager: AnchorManager | null = null;
+  private productClassResolver: ((productId: string) => ProductClass) | null = null;
   private raycaster: THREE.Raycaster;
   private floorPlane: THREE.Plane;
   private wallPlane: THREE.Plane = new THREE.Plane();
@@ -27,6 +32,8 @@ export class TransformController {
   private highlightCenter: THREE.Vector3 = new THREE.Vector3();
   private highlightPulsePhase: number = 0;
   private scene: THREE.Scene;
+  private callouts: DimensionCallouts;
+  private roomCorners: Point2D[] = [];
 
   // Reusable objects to avoid per-frame allocations
   private _mouse = new THREE.Vector2();
@@ -52,6 +59,7 @@ export class TransformController {
     this.placer = placer;
     this.camera = camera;
     this.scene = scene;
+    this.callouts = new DimensionCallouts(scene);
     this.raycaster = new THREE.Raycaster();
     this.floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 
@@ -70,8 +78,19 @@ export class TransformController {
     this.planeManager = pm;
   }
 
-  setAnchorManager(am: any): void {
+  setAnchorManager(am: AnchorManager): void {
     this.anchorManager = am;
+  }
+
+  setProductClassResolver(fn: (productId: string) => ProductClass): void {
+    this.productClassResolver = fn;
+  }
+
+  isScaleLocked(): boolean {
+    if (!this.selectedId || !this.productClassResolver) return false;
+    const placedModel = this.placer.getPlacedModel(this.selectedId);
+    if (!placedModel) return false;
+    return this.productClassResolver(placedModel.productId) === "mass";
   }
 
   selectObject(id: string | null): void {
@@ -89,6 +108,10 @@ export class TransformController {
 
   getSelectedId(): string | null {
     return this.selectedId;
+  }
+
+  getCalloutAnchors(out: CalloutAnchors): boolean {
+    return this.callouts.getAnchors(out);
   }
 
   /**
@@ -198,6 +221,11 @@ export class TransformController {
       
       const hit = this.raycaster.ray.intersectPlane(this.wallPlane, this._intersection);
       if (hit) {
+        if (this.roomCorners.length === 4) {
+          if (!isPointInPolygon({ x: this._intersection.x, z: this._intersection.z }, this.roomCorners)) {
+            return;
+          }
+        }
         this.placer.updateTransform(this.selectedId, this._intersection);
         this.updateHighlightPosition(placedModel);
       }
@@ -206,6 +234,11 @@ export class TransformController {
       const hit = this.raycaster.ray.intersectPlane(this.floorPlane, this._intersection);
       
       if (hit) {
+        if (this.roomCorners.length === 4) {
+          if (!isPointInPolygon({ x: this._intersection.x, z: this._intersection.z }, this.roomCorners)) {
+            return;
+          }
+        }
         // We've removed the aggressive wall physics collision here because ARCore often
         // detects false walls (like table edges or noise) which causes the object
         // to get stuck and push away from the user incorrectly.
@@ -262,13 +295,13 @@ export class TransformController {
   }
 
   onScaleStart(distance: number): void {
-    if (!this.selectedId) return;
+    if (!this.selectedId || this.isScaleLocked()) return;
     this.gestureState.isScaling = true;
     this.gestureState.lastPinchDist = distance;
   }
 
   onScaleMove(distance: number): void {
-    if (!this.gestureState.isScaling || !this.selectedId) return;
+    if (!this.gestureState.isScaling || !this.selectedId || this.isScaleLocked()) return;
 
     const scaleFactor = distance / this.gestureState.lastPinchDist;
     const placedModel = this.placer.getPlacedModel(this.selectedId);
@@ -321,7 +354,7 @@ export class TransformController {
    * Returns the actual scale factor applied (may differ from `factor` if clamped).
    */
   scaleBy(factor: number): number {
-    if (!this.selectedId) return 1;
+    if (!this.selectedId || this.isScaleLocked()) return 1;
     const placedModel = this.placer.getPlacedModel(this.selectedId);
     if (!placedModel) return 1;
     const current = placedModel.model.scale;
@@ -345,10 +378,16 @@ export class TransformController {
     if (!this.selectedId) return null;
     const id = this.selectedId;
     this.removeHighlight();
-    this.placer.removeObject(this.selectedId);
+    this.placer.removeObject(id);
     this.selectedId = null;
     return id;
   }
+
+  public setRoomCorners(corners: Point2D[]): void {
+    this.roomCorners = corners;
+  }
+
+
 
   /**
    * Update the pulsing animation of the highlight. Call from the render loop.
@@ -369,6 +408,7 @@ export class TransformController {
     this.removeHighlight();
 
     const box = new THREE.Box3().setFromObject(placedModel.model);
+    this.callouts.show(box);
     const size = box.getSize(new THREE.Vector3());
     const center = box.getCenter(new THREE.Vector3());
 
@@ -403,9 +443,11 @@ export class TransformController {
     this.highlightMesh.position.copy(center);
     this.highlightBaseSize.copy(size);
     this.highlightCenter.copy(center);
+    this.callouts.update(box);
   }
 
   private removeHighlight(): void {
+    this.callouts.hide();
     if (this.highlightMesh) {
       this.scene.remove(this.highlightMesh);
       this.highlightMesh.geometry.dispose();
@@ -416,6 +458,7 @@ export class TransformController {
 
   dispose(): void {
     this.removeHighlight();
+    this.callouts.dispose();
     this.selectedId = null;
   }
 }

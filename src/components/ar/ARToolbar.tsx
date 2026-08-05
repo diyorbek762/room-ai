@@ -10,6 +10,9 @@ export interface ARToolbarProps {
   onSave: () => void;
   onClear: () => void;
   onExit: () => void;
+  onOpenSurfaces?: () => void;
+  onBeforeAfter?: () => void;
+  onShareUrl?: () => void;
   objectCount: number;
 }
 
@@ -21,6 +24,9 @@ export function ARToolbar({
   onSave,
   onClear,
   onExit,
+  onOpenSurfaces,
+  onBeforeAfter,
+  onShareUrl,
   objectCount,
 }: ARToolbarProps) {
   return (
@@ -37,12 +43,32 @@ export function ARToolbar({
           </p>
         </GlassPanel>
 
-        <button
-          onClick={onExit}
-          className="bg-red-500/80 hover:bg-red-500 backdrop-blur-md text-white font-semibold px-4 py-2 rounded-xl border border-white/10 pointer-events-auto active:scale-95 transition-all"
-        >
-          Exit AR
-        </button>
+        <div className="flex gap-2 pointer-events-auto">
+          {onShareUrl && (
+            <button
+              onClick={onShareUrl}
+              className="bg-emerald-500/80 hover:bg-emerald-500 backdrop-blur-md text-white text-sm font-semibold px-3 py-2 rounded-xl border border-white/10 active:scale-95 transition-all flex items-center gap-1"
+              title="Share Room Link"
+            >
+              <span>🔗</span> Share
+            </button>
+          )}
+          {onBeforeAfter && (
+            <button
+              onClick={onBeforeAfter}
+              className="bg-indigo-500/80 hover:bg-indigo-500 backdrop-blur-md text-white text-sm font-semibold px-3 py-2 rounded-xl border border-white/10 active:scale-95 transition-all flex items-center gap-1"
+              title="Before/After Split View"
+            >
+              <span>✨</span> B/A
+            </button>
+          )}
+          <button
+            onClick={onExit}
+            className="bg-red-500/80 hover:bg-red-500 backdrop-blur-md text-white font-semibold px-4 py-2 rounded-xl border border-white/10 active:scale-95 transition-all text-sm"
+          >
+            Exit AR
+          </button>
+        </div>
       </div>
 
       <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex gap-2 pointer-events-auto">
@@ -68,6 +94,14 @@ export function ARToolbar({
         >
           ↻
         </ToolbarButton>
+        {onOpenSurfaces && (
+          <ToolbarButton
+            onClick={onOpenSurfaces}
+            label="Surface Decorator (Pol & Devor)"
+          >
+            🎨
+          </ToolbarButton>
+        )}
         <ToolbarButton
           onClick={onSave}
           label="Save Scene"
@@ -86,6 +120,7 @@ export function ARToolbar({
     </>
   );
 }
+
 
 function ToolbarButton({
   children,

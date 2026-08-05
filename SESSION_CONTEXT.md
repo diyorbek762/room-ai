@@ -115,6 +115,16 @@ npm run build              # Production build
 
 ---
 
+## Session 3 Changes (2026-08-04)
+
+- **Room Calibration ("Ruletka")**: `MeasurementOverlay` + `MeasurementVisualizer` let users tap 4 corners to measure floor perimeter and estimate wall height. Guided by `measureMode` state.
+- **1:1 Scale Lock**: `TransformController` gates scaling for `productClass === "mass"`; rotation remains unlocked. UI shows `🔒 1:1` badge and status message `1:1 factory scale — size locked`. `demo-013` (wardrobe) marked `productClass: "modular"` for testing unlocked scaling.
+- **3D Dimension Callouts**: `DimensionCallouts` renders W/D/H lines + ticks around selected object; `page.tsx` projects midpoints to DOM labels (`#callout-w/d/h`) showing `XX cm`.
+- **ID Unification**: `useARStore.placeObject` now accepts caller-provided `id`; `page.tsx` generates a single `placed_${ts}_${counter}` ID shared by both `ObjectPlacer` and the store, eliminating duplicate IDs.
+- **GLB Normalization**: `ObjectPlacer.setProductDimsResolver` compares loaded GLB bounds against catalog dimensions; off-scale models (>15% width deviation) are auto-scaled to match catalog width.
+
+---
+
 ## Known Issues / Notes
 
 1. **Touch works at document level** — if changing touch logic, don't use React synthetic events or overlay.addEventListener; use `document.addEventListener` in useEffect.

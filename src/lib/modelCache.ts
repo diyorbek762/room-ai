@@ -1,4 +1,4 @@
-import { getAllTierUrls, type ModelQuality } from "./modelUrl";
+import { getAllTierUrls } from "./modelUrl";
 import { runConcurrent } from "./modelLoader";
 
 const CACHE_NAME = "roomai-models-v4";

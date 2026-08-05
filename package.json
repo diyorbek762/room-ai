@@ -16,6 +16,7 @@
     "assets:inspect": "tsx scripts/inspect-model.ts",
     "assets:build": "tsx scripts/build-models.ts",
     "assets:procedural": "tsx scripts/generate-procedural-models.ts",
+    "assets:compress": "tsx scripts/draco-compress.ts",
     "assets:all": "npm run assets:build && npm run assets:procedural",
     "assets:validate": "tsx scripts/validate-assets.ts",
     "assets:thumbnails": "tsx scripts/generate-thumbnails.ts"

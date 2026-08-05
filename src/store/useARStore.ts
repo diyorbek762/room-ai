@@ -16,18 +16,13 @@ interface ARStoreState {
   setScanStatus: (status: "scanning" | "ready") => void;
   setReticlePose: (pose: Float32Array | null) => void;
 
-  placeObject: (productId: string, modelUrl: string, position: Vector3Tuple) => void;
+  placeObject: (id: string, productId: string, modelUrl: string, position: Vector3Tuple) => void;
   removeObject: (id: string) => void;
   updateTransform: (id: string, patch: Partial<Pick<PlacedObject, "position" | "rotation" | "scale">>) => void;
   selectObject: (id: string | null) => void;
 
   loadScene: (objects: PlacedObject[]) => void;
   clearScene: () => void;
-}
-
-let nextId = 0;
-function genId(): string {
-  return `obj_${Date.now()}_${nextId++}`;
 }
 
 export const useARStore = create<ARStoreState>()(
@@ -45,12 +40,12 @@ export const useARStore = create<ARStoreState>()(
       setScanStatus: (status) => set({ scanStatus: status }),
       setReticlePose: (pose) => set({ reticlePose: pose }),
 
-      placeObject: (productId, modelUrl, position) =>
+      placeObject: (id, productId, modelUrl, position) =>
         set((state) => ({
           placedObjects: [
             ...state.placedObjects,
             {
-              id: genId(),
+              id,
               productId,
               modelUrl,
               position,

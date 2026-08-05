@@ -3,6 +3,7 @@ import type { PlaneManager } from "./PlaneManager";
 
 export class HitTestManager {
   private hitTestSource: XRHitTestSource | null = null;
+  private stableReferenceSpace: XRReferenceSpace | null = null;
   private reticle: THREE.Group;
   private reticleRing: THREE.Mesh;
   private reticleInnerRing: THREE.Mesh;
@@ -93,12 +94,25 @@ export class HitTestManager {
 
   async initHitTest(
     session: XRSession,
-    _referenceSpace: XRReferenceSpace
+    referenceSpace: XRReferenceSpace
   ): Promise<boolean> {
-    // Try multiple reference spaces for best device compatibility
-    const spaces = ["viewer", "local", "local-floor"];
-    
-    for (const spaceType of spaces) {
+    // Request a stable floor-bound reference space so captured points stay fixed
+    // relative to the physical room when the user moves the phone.
+    try {
+      this.stableReferenceSpace = await session.requestReferenceSpace("local-floor");
+    } catch {
+      try {
+        this.stableReferenceSpace = await session.requestReferenceSpace("local");
+      } catch {
+        this.stableReferenceSpace = referenceSpace;
+      }
+    }
+
+    // Use viewer for the hit-test source because it becomes available
+    // immediately before the floor is fully mapped; poses are transformed
+    // into the stable reference space below.
+    const sourceTypes: XRReferenceSpaceType[] = ["viewer", "local", "local-floor"];
+    for (const spaceType of sourceTypes) {
       try {
         const space = await session.requestReferenceSpace(spaceType);
         const source = await session.requestHitTestSource!({ space });
@@ -110,7 +124,7 @@ export class HitTestManager {
         // Try next space
       }
     }
-    
+
     return false;
   }
 
@@ -122,7 +136,8 @@ export class HitTestManager {
     if (hitTestResults.length > 0) {
       const hit = hitTestResults[0];
       this.lastHitTestResult = hit;
-      const pose = hit.getPose(referenceSpace);
+      const poseSpace = this.stableReferenceSpace || referenceSpace;
+      const pose = hit.getPose(poseSpace);
 
       if (pose) {
         this.hitPose.fromArray(pose.transform.matrix);

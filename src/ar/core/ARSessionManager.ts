@@ -49,14 +49,19 @@ export class ARSessionManager {
     try {
       this.session = await navigator.xr.requestSession("immersive-ar", sessionInit);
     } catch {
-      const fallbackInit: XRSessionInit = {
-        requiredFeatures: ["local-floor"],
-        optionalFeatures: ["dom-overlay"],
-      };
-      if (overlayElement) {
-        fallbackInit.domOverlay = { root: overlayElement };
+      try {
+        const fallbackInit: XRSessionInit = {
+          requiredFeatures: [],
+          optionalFeatures: ["hit-test", "local-floor", "dom-overlay", "anchors", "plane-detection"],
+        };
+        if (overlayElement) {
+          fallbackInit.domOverlay = { root: overlayElement };
+        }
+        this.session = await navigator.xr.requestSession("immersive-ar", fallbackInit);
+      } catch (err: unknown) {
+        console.error("WebXR requestSession failed:", err);
+        throw err;
       }
-      this.session = await navigator.xr.requestSession("immersive-ar", fallbackInit);
     }
 
     this.session.addEventListener("end", this.handleSessionEnd);

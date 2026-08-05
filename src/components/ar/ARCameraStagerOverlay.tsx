@@ -3,6 +3,11 @@
 import { useState } from "react";
 import { cn, formatUZS } from "@/lib/format";
 import { useARStore } from "@/store/useARStore";
+import { useMeasurementStore } from "@/store";
+import { useSurfaceStore } from "@/store/useSurfaceStore";
+import { MeasurementOverlay } from "./MeasurementOverlay";
+import { SurfacePickerModal } from "./SurfacePickerModal";
+
 
 export interface OverlayProduct {
   id: string;
@@ -15,6 +20,7 @@ export interface OverlayProduct {
   categorySlug: string;
   dimensions: { w: number; h: number; d: number };
   placement: "floor" | "wall" | "floor-wall";
+  productClass: "mass" | "modular" | "surface";
 }
 
 export interface OverlayFinishItem {
@@ -49,6 +55,7 @@ export interface ARCameraStagerOverlayProps {
   totalPriceUZS: number;
   loadingCount: number;
   selectedProductName: string;
+  scaleLocked: boolean;
   products: OverlayProduct[];
 
   marketOpen: boolean;
@@ -66,10 +73,16 @@ export interface ARCameraStagerOverlayProps {
   onScaleDown: () => void;
   onDeselect: () => void;
 
+  measureMode: "idle" | "capturing" | "done";
+  onMeasureToggle: () => void;
+  onCaptureCorner: () => void;
+
   finishOpen: boolean;
   finishItems: OverlayFinishItem[];
   onCloseFinish: () => void;
   onPlaceOrder: () => void;
+  onBeforeAfter?: () => void;
+  onShareUrl?: () => void;
 }
 
 export function ARCameraStagerOverlay(props: ARCameraStagerOverlayProps) {
@@ -81,6 +94,7 @@ export function ARCameraStagerOverlay(props: ARCameraStagerOverlayProps) {
     totalPriceUZS,
     loadingCount,
     selectedProductName,
+    scaleLocked,
     products,
     marketOpen,
     onMarketOpenChange,
@@ -95,16 +109,23 @@ export function ARCameraStagerOverlay(props: ARCameraStagerOverlayProps) {
     onScaleUp,
     onScaleDown,
     onDeselect,
+    measureMode,
+    onMeasureToggle,
+    onCaptureCorner,
     finishOpen,
     finishItems,
     onCloseFinish,
     onPlaceOrder,
+    onBeforeAfter,
+    onShareUrl,
   } = props;
 
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<CategoryKey | "all">("all");
   const placedObjects = useARStore((s) => s.placedObjects);
   const scanStatus = useARStore((s) => s.scanStatus);
+  const corners = useMeasurementStore((s) => s.corners);
+  const roomConfirmed = useMeasurementStore((s) => s.roomConfirmed);
 
   const filteredMarket = products.filter((p) => {
     if (categoryFilter !== "all" && p.categorySlug !== categoryFilter) return false;
@@ -146,30 +167,51 @@ export function ARCameraStagerOverlay(props: ARCameraStagerOverlayProps) {
         })}
       </div>
 
-      {/* LAYER 0.5: Scanning Overlay Phase */}
-      {scanStatus === "scanning" && (
-        <div className="absolute inset-0 z-25 flex flex-col items-center justify-center bg-slate-950/80 backdrop-blur-sm pointer-events-auto">
-          {/* Animated Scanning Icon */}
-          <div className="relative w-24 h-24 mb-6">
-            <div className="absolute inset-0 border-4 border-emerald-500/30 rounded-full animate-[ping_2s_cubic-bezier(0,0,0.2,1)_infinite]" />
-            <div className="absolute inset-0 border-2 border-emerald-400 rounded-full flex items-center justify-center">
-              <svg 
-                className="w-10 h-10 text-emerald-400 animate-pulse" 
-                fill="none" viewBox="0 0 24 24" stroke="currentColor"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
-              </svg>
-            </div>
-            {/* Radar Sweep Effect */}
-            <div className="absolute inset-0 rounded-full overflow-hidden">
-              <div className="w-full h-1/2 bg-gradient-to-b from-transparent to-emerald-400/40 origin-bottom animate-[spin_3s_linear_infinite]" />
-            </div>
+      {/* LAYER 0.1: Dimension callout labels */}
+      <div className="absolute inset-0 pointer-events-none overflow-hidden z-20">
+        <div
+          id="callout-w"
+          className="absolute hidden -translate-x-1/2 -translate-y-1/2 bg-white/90 text-slate-900 text-[10px] font-bold font-mono px-1.5 py-0.5 rounded-md shadow"
+          style={{ transform: "translate3d(-1000px, -1000px, 0)" }}
+        />
+        <div
+          id="callout-d"
+          className="absolute hidden -translate-x-1/2 -translate-y-1/2 bg-white/90 text-slate-900 text-[10px] font-bold font-mono px-1.5 py-0.5 rounded-md shadow"
+          style={{ transform: "translate3d(-1000px, -1000px, 0)" }}
+        />
+        <div
+          id="callout-h"
+          className="absolute hidden -translate-x-1/2 -translate-y-1/2 bg-white/90 text-slate-900 text-[10px] font-bold font-mono px-1.5 py-0.5 rounded-md shadow"
+          style={{ transform: "translate3d(-1000px, -1000px, 0)" }}
+        />
+      </div>
+
+      {/* LAYER 0.5: Center Crosshair */}
+      {measureMode === "capturing" && (
+        <div className="absolute inset-0 pointer-events-none flex items-center justify-center z-20">
+          <div className="relative w-6 h-6">
+            <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-emerald-400 -translate-y-1/2 shadow-sm" />
+            <div className="absolute left-1/2 top-0 bottom-0 w-0.5 bg-emerald-400 -translate-x-1/2 shadow-sm" />
           </div>
-          
-          <h2 className="text-white text-xl font-bold mb-2">Scan Your Room</h2>
-          <p className="text-slate-300 text-center text-sm max-w-[250px]">
-            Point your camera at the floor and move it slowly side-to-side to detect surfaces.
-          </p>
+        </div>
+      )}
+
+      {/* LAYER 0.75: Measurement Overlay (badges, banner, controls) */}
+      <MeasurementOverlay />
+
+      {/* LAYER 0.85: Capture Corner Button */}
+      {measureMode === "capturing" && (
+        <div className="absolute bottom-32 left-1/2 -translate-x-1/2 z-40 pointer-events-auto flex flex-col items-center gap-3">
+          <div className="bg-slate-900/80 backdrop-blur-md px-4 py-2 rounded-full border border-white/20 text-white font-bold text-sm shadow-xl">
+            Aim at corner {corners.length + 1}/4
+          </div>
+          <button
+            type="button"
+            onClick={onCaptureCorner}
+            className="w-20 h-20 bg-emerald-500 hover:bg-emerald-600 rounded-full border-4 border-white/20 shadow-lg shadow-emerald-500/30 flex items-center justify-center active:scale-95 transition-all"
+          >
+            <div className="w-16 h-16 border-2 border-white/50 rounded-full" />
+          </button>
         </div>
       )}
 
@@ -196,9 +238,11 @@ export function ARCameraStagerOverlay(props: ARCameraStagerOverlayProps) {
           <span className="truncate">
             {selectedObjectId
               ? `Editing: ${selectedProductName}`
-              : hitTestReady
-                ? "Tap or drag surface to place"
-                : statusMessage}
+              : measureMode === "capturing"
+                ? `Aim at corner ${corners.length + 1}/4`
+                : hitTestReady
+                  ? "Tap or drag surface to place"
+                  : statusMessage}
             <span className="text-slate-400"> • </span>
             <span className="text-slate-400">Objects: {placedObjectsCount}</span>
             {loadingCount > 0 && (
@@ -210,12 +254,52 @@ export function ARCameraStagerOverlay(props: ARCameraStagerOverlayProps) {
           </span>
         </div>
 
-
         <div className="flex items-center gap-2 flex-shrink-0">
+          {measureMode === "done" && (
+            <button
+              type="button"
+              onClick={onMeasureToggle}
+              disabled={scanStatus !== "ready"}
+              className="font-bold px-4 py-2 rounded-xl text-xs active:scale-95 transition-all border bg-slate-700/90 text-slate-200 border-white/10 hover:bg-slate-600/90"
+            >
+              Re-measure
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => useSurfaceStore.getState().setSurfaceModalOpen(true)}
+            className="bg-purple-600/80 hover:bg-purple-600 backdrop-blur-md text-white font-bold px-3.5 py-2 rounded-xl border border-white/15 text-xs active:scale-95 transition-all flex items-center gap-1.5 shadow-lg shadow-purple-500/20"
+          >
+            <span>🎨</span> Surfaces
+          </button>
+          {onBeforeAfter && (
+            <button
+              type="button"
+              onClick={onBeforeAfter}
+              className="bg-indigo-600/80 hover:bg-indigo-600 backdrop-blur-md text-white font-bold px-3 py-2 rounded-xl border border-white/15 text-xs active:scale-95 transition-all flex items-center gap-1 shadow-lg shadow-indigo-500/20"
+              title="Before/After Split View"
+            >
+              <span>✨</span> B/A
+            </button>
+          )}
+          {onShareUrl && (
+            <button
+              type="button"
+              onClick={onShareUrl}
+              className="bg-emerald-600/80 hover:bg-emerald-600 backdrop-blur-md text-white font-bold px-3 py-2 rounded-xl border border-white/15 text-xs active:scale-95 transition-all flex items-center gap-1 shadow-lg shadow-emerald-500/20"
+              title="Share Room Link"
+            >
+              <span>🔗</span> Share
+            </button>
+          )}
           <button
             type="button"
             onClick={() => onMarketOpenChange(true)}
-            className="bg-slate-900/80 backdrop-blur-md hover:bg-slate-800 text-white font-bold px-4 py-2 rounded-xl border border-white/15 text-xs active:scale-95 transition-all"
+            disabled={!roomConfirmed}
+            className={cn(
+              "bg-slate-900/80 backdrop-blur-md text-white font-bold px-4 py-2 rounded-xl border border-white/15 text-xs active:scale-95 transition-all",
+              roomConfirmed ? "hover:bg-slate-800" : "opacity-50 cursor-not-allowed"
+            )}
           >
             Market
           </button>
@@ -228,6 +312,9 @@ export function ARCameraStagerOverlay(props: ARCameraStagerOverlayProps) {
           </button>
         </div>
       </div>
+
+      <SurfacePickerModal />
+
 
       {/* PRICE SUMMARY PANEL (Moved to bottom right to avoid overlap with top banners) */}
       {totalPriceUZS > 0 && (
@@ -288,24 +375,35 @@ export function ARCameraStagerOverlay(props: ARCameraStagerOverlayProps) {
 
             <div className="w-px h-6 bg-white/10 mx-1" />
 
-            <button
-              type="button"
-              onClick={onScaleDown}
-              className="h-9 px-3 bg-slate-800/90 hover:bg-slate-700 text-white text-sm font-bold rounded-lg border border-white/10 active:scale-95 transition-all flex items-center justify-center"
-              aria-label="Scale down"
-              title="Scale down"
-            >
-              −
-            </button>
-            <button
-              type="button"
-              onClick={onScaleUp}
-              className="h-9 px-3 bg-slate-800/90 hover:bg-slate-700 text-white text-sm font-bold rounded-lg border border-white/10 active:scale-95 transition-all flex items-center justify-center"
-              aria-label="Scale up"
-              title="Scale up"
-            >
-              +
-            </button>
+            {scaleLocked ? (
+              <div
+                className="h-9 px-3 bg-slate-800/60 text-slate-300 text-sm font-bold rounded-lg border border-white/10 flex items-center justify-center select-none"
+                title="1:1 factory scale locked"
+              >
+                🔒 1:1
+              </div>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={onScaleDown}
+                  className="h-9 px-3 bg-slate-800/90 hover:bg-slate-700 text-white text-sm font-bold rounded-lg border border-white/10 active:scale-95 transition-all flex items-center justify-center"
+                  aria-label="Scale down"
+                  title="Scale down"
+                >
+                  −
+                </button>
+                <button
+                  type="button"
+                  onClick={onScaleUp}
+                  className="h-9 px-3 bg-slate-800/90 hover:bg-slate-700 text-white text-sm font-bold rounded-lg border border-white/10 active:scale-95 transition-all flex items-center justify-center"
+                  aria-label="Scale up"
+                  title="Scale up"
+                >
+                  +
+                </button>
+              </>
+            )}
           </div>
 
           {/* Row 2: Rotate, Delete, Deselect, Clear */}
@@ -352,15 +450,17 @@ export function ARCameraStagerOverlay(props: ARCameraStagerOverlayProps) {
       {/* LAYER 3 (Coverflow Carousel) removed — Market drawer is the single selection surface */}
 
       {/* LAYER 5 (button part): Bottom Primary Action Button */}
-      <div className="absolute bottom-4 left-4 right-4 z-30 pointer-events-auto">
-        <button
-          type="button"
-          onClick={onSaveAndFinish}
-          className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-3.5 rounded-2xl text-sm shadow-xl shadow-emerald-500/25 active:scale-[0.98] transition-all"
-        >
-          Save & Finish Staging
-        </button>
-      </div>
+      {measureMode === "done" && roomConfirmed && (
+        <div className="absolute bottom-4 left-4 right-4 z-30 pointer-events-auto">
+          <button
+            type="button"
+            onClick={onSaveAndFinish}
+            className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-3.5 rounded-2xl text-sm shadow-xl shadow-emerald-500/25 active:scale-[0.98] transition-all"
+          >
+            Save & Finish Staging
+          </button>
+        </div>
+      )}
 
       {/* LAYER 4: In-Camera Market Drawer */}
       <div
@@ -484,8 +584,8 @@ export function ARCameraStagerOverlay(props: ARCameraStagerOverlayProps) {
         />
       )}
 
-      {/* Hint when a product is armed for placement */}
-      {selectedProductName && !selectedObjectId && !marketOpen && !finishOpen && scanStatus === "ready" && (
+      {/* LAYER 7: In-Camera Interaction Instructions (Top) */}
+      {measureMode === "done" && roomConfirmed && selectedProductName && !selectedObjectId && !marketOpen && !finishOpen && scanStatus === "ready" && (
         <div className="absolute top-28 left-1/2 -translate-x-1/2 z-30 pointer-events-none w-[90%] max-w-sm flex justify-center">
           <div className="bg-slate-900/80 backdrop-blur-md px-3 py-2 rounded-xl border border-white/10 text-[11px] text-slate-200 text-center shadow-lg">
             <span className="text-emerald-400 block mb-0.5 font-semibold">▸ {selectedProductName}</span>
@@ -501,11 +601,15 @@ export function ARCameraStagerOverlay(props: ARCameraStagerOverlayProps) {
       )}
 
       {/* Hint in edit mode */}
-      {selectedObjectId && !marketOpen && !finishOpen && scanStatus === "ready" && (
+      {measureMode === "done" && roomConfirmed && selectedObjectId && !marketOpen && !finishOpen && scanStatus === "ready" && (
         <div className="absolute top-28 left-1/2 -translate-x-1/2 z-30 pointer-events-none w-[90%] max-w-sm flex justify-center">
           <div className="bg-emerald-500/20 backdrop-blur-md px-3 py-2 rounded-xl border border-emerald-400/40 text-[11px] text-emerald-200 text-center shadow-lg">
             <span className="text-emerald-300 font-semibold block mb-0.5">● Editing</span>
-            <span className="text-emerald-200/80">drag, pinch, twist · tap empty floor to deselect</span>
+            <span className="text-emerald-200/80">
+              {scaleLocked
+                ? "drag, twist · 1:1 factory scale locked"
+                : "drag, pinch, twist · tap empty floor to deselect"}
+            </span>
           </div>
         </div>
       )}
