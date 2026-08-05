@@ -171,8 +171,8 @@ export function ARCameraStagerOverlay(props: ARCameraStagerOverlayProps) {
       </div>
 
       {/* LAYER 1: Floating Header */}
-      <div className="absolute top-4 left-4 right-4 z-30 flex items-center justify-between gap-2 pointer-events-auto">
-        <div className="bg-slate-900/80 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-white/10 text-xs text-slate-200 font-medium flex items-center gap-2 min-w-0">
+      <div className="absolute top-4 left-4 right-4 z-30 flex items-center justify-between gap-2 pointer-events-none">
+        <div className="bg-slate-900/80 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-white/10 text-xs text-slate-200 font-medium flex items-center gap-2 min-w-0 pointer-events-auto">
           <span className="relative flex h-2 w-2 flex-shrink-0">
             {selectedObjectId ? (
               <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping" />
@@ -207,7 +207,7 @@ export function ARCameraStagerOverlay(props: ARCameraStagerOverlayProps) {
           </span>
         </div>
 
-        <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="flex items-center gap-2 flex-shrink-0 pointer-events-auto">
           <button
             type="button"
             onClick={() => onMarketOpenChange(true)}
@@ -240,9 +240,9 @@ export function ARCameraStagerOverlay(props: ARCameraStagerOverlayProps) {
 
       {/* LAYER 2: In-Camera Active Object Control Bar (Edit Mode) */}
       {selectedObjectId && (
-        <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center gap-2 pointer-events-auto w-[95vw] max-w-sm">
+        <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center gap-2 pointer-events-none w-[95vw] max-w-sm">
           {/* Row 1: Move arrows + Scale +/− */}
-          <div className="flex items-center gap-1.5 bg-slate-900/80 backdrop-blur-md border border-white/10 rounded-xl p-1.5 max-w-full overflow-x-auto scrollbar-hide">
+          <div className="flex items-center gap-1.5 bg-slate-900/80 backdrop-blur-md border border-white/10 rounded-xl p-1.5 max-w-full overflow-x-auto scrollbar-hide pointer-events-auto">
             <button
               type="button"
               onClick={() => onNudge(-0.1, 0)}
@@ -316,7 +316,7 @@ export function ARCameraStagerOverlay(props: ARCameraStagerOverlayProps) {
           </div>
 
           {/* Row 2: Rotate, Delete, Deselect, Clear */}
-          <div className="flex flex-wrap justify-center items-center gap-1.5 bg-slate-900/80 backdrop-blur-md border border-white/10 rounded-xl p-1.5 w-full">
+          <div className="flex flex-wrap justify-center items-center gap-1.5 bg-slate-900/80 backdrop-blur-md border border-white/10 rounded-xl p-1.5 w-full pointer-events-auto">
             <button
               type="button"
               onClick={onRotateLeft}
@@ -365,11 +365,11 @@ export function ARCameraStagerOverlay(props: ARCameraStagerOverlayProps) {
 
       {/* LAYER 5: Bottom Primary Action Button */}
       {scanStatus === "ready" && !marketOpen && !finishOpen && (
-        <div className="absolute bottom-4 left-4 right-4 z-30 pointer-events-auto">
+        <div className="absolute bottom-4 left-4 right-4 z-30 pointer-events-none flex justify-center">
           <button
             type="button"
             onClick={onSaveAndFinish}
-            className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-3.5 rounded-2xl text-sm shadow-xl shadow-emerald-500/25 active:scale-[0.98] transition-all"
+            className="w-full max-w-sm bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-3.5 rounded-2xl text-sm shadow-xl shadow-emerald-500/25 active:scale-[0.98] transition-all pointer-events-auto"
           >
             Save & Finish Staging
           </button>
