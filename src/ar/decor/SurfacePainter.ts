@@ -4,10 +4,7 @@ import type { SurfaceMaterialPreset } from "./surfacePresets";
 export class SurfacePainter {
   private scene: THREE.Scene;
   private floorMesh: THREE.Mesh | null = null;
-  private wallMeshes: THREE.Mesh[] = [];
-
   private currentFloorPreset: SurfaceMaterialPreset | null = null;
-  private currentWallPreset: SurfaceMaterialPreset | null = null;
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
@@ -62,57 +59,6 @@ export class SurfacePainter {
   }
 
   /**
-   * Update 3D vertical wall meshes based on perimeter corners and wall height.
-   */
-  updateWallSurfaces(corners: THREE.Vector3Tuple[], wallHeight: number, preset: SurfaceMaterialPreset | null): void {
-    this.currentWallPreset = preset;
-
-    // Clear existing wall meshes
-    for (const mesh of this.wallMeshes) {
-      this.scene.remove(mesh);
-      mesh.geometry.dispose();
-      (mesh.material as THREE.Material).dispose();
-    }
-    this.wallMeshes.length = 0;
-
-    if (!preset || corners.length < 3 || wallHeight <= 0) {
-      return;
-    }
-
-    const n = corners.length;
-    for (let i = 0; i < n; i++) {
-      const p1 = corners[i];
-      const p2 = corners[(i + 1) % n];
-
-      const dx = p2[0] - p1[0];
-      const dz = p2[2] - p1[2];
-      const length = Math.hypot(dx, dz);
-      if (length < 0.01) continue;
-
-      const geometry = new THREE.PlaneGeometry(length, wallHeight);
-      const material = this.createPBRMaterial(preset);
-
-      const wallMesh = new THREE.Mesh(geometry, material);
-      wallMesh.renderOrder = 1;
-      wallMesh.receiveShadow = true;
-
-      // Position center of wall quad at midpoint X/Z and Y = base + height/2
-      const midX = (p1[0] + p2[0]) / 2;
-      const midY = (p1[1] + p2[1]) / 2;
-      const midZ = (p1[2] + p2[2]) / 2;
-
-      wallMesh.position.set(midX, midY + wallHeight / 2, midZ);
-
-      // Rotate plane to align along line p1 -> p2
-      const angle = Math.atan2(dx, dz);
-      wallMesh.rotation.y = angle + Math.PI / 2;
-
-      this.scene.add(wallMesh);
-      this.wallMeshes.push(wallMesh);
-    }
-  }
-
-  /**
    * Create PBR material for wallpaper (aboy), wall paint, or parquet floor.
    */
   private createPBRMaterial(preset: SurfaceMaterialPreset): THREE.MeshStandardMaterial {
@@ -123,6 +69,8 @@ export class SurfacePainter {
       side: THREE.DoubleSide,
       depthWrite: true,
       depthTest: true,
+      transparent: true,
+      opacity: 0.7,
     });
 
     return mat;
@@ -138,13 +86,6 @@ export class SurfacePainter {
       (this.floorMesh.material as THREE.Material).dispose();
       this.floorMesh = null;
     }
-
-    for (const mesh of this.wallMeshes) {
-      this.scene.remove(mesh);
-      mesh.geometry.dispose();
-      (mesh.material as THREE.Material).dispose();
-    }
-    this.wallMeshes.length = 0;
   }
 }
 

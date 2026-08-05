@@ -532,8 +532,8 @@ export class ObjectPlacer {
 
   private createPlaceholder(productId: string, _surfaceType: "floor" | "wall" = "floor"): THREE.Group {
     const group = new THREE.Group();
-    const dims = FURNITURE_DIMS[productId] || [0.5, 0.5, 0.5];
-    const [w, h, d] = dims;
+    const dims = this.productDimsResolver?.(productId) || { w: 0.5, h: 0.5, d: 0.5 };
+    const { w, h, d } = dims;
 
     const categoryMap: Record<string, string> = {
       "01": "sofas", "02": "chairs", "03": "chairs", "04": "tables",

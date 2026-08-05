@@ -82,8 +82,6 @@ export interface ARCameraStagerOverlayProps {
   finishItems: OverlayFinishItem[];
   onCloseFinish: () => void;
   onPlaceOrder: () => void;
-  onBeforeAfter?: () => void;
-  onShareUrl?: () => void;
 }
 
 const surfaceOverlayProducts: OverlayProduct[] = [
@@ -106,11 +104,11 @@ const surfaceOverlayProducts: OverlayProduct[] = [
     nameUz: preset.nameUz,
     priceUZS: preset.pricePerM2,
     storeSlug: "surface",
-    storeName: preset.type === "floor" ? "Pol (Floor)" : "Devor (Wall)",
+    storeName: "Surface Material",
     modelUrl: "",
     categorySlug: "surfaces",
     dimensions: { w: 1, h: 1, d: 1 },
-    placement: preset.type as "floor" | "wall",
+    placement: "floor" as const,
     productClass: "surface" as const,
   })),
 ];
@@ -146,8 +144,6 @@ export function ARCameraStagerOverlay(props: ARCameraStagerOverlayProps) {
     finishItems,
     onCloseFinish,
     onPlaceOrder,
-    onBeforeAfter,
-    onShareUrl,
   } = props;
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -302,26 +298,7 @@ export function ARCameraStagerOverlay(props: ARCameraStagerOverlayProps) {
               Re-measure
             </button>
           )}
-          {onBeforeAfter && (
-            <button
-              type="button"
-              onClick={onBeforeAfter}
-              className="bg-indigo-600/80 hover:bg-indigo-600 backdrop-blur-md text-white font-bold px-3 py-2 rounded-xl border border-white/15 text-xs active:scale-95 transition-all flex items-center gap-1 shadow-lg shadow-indigo-500/20"
-              title="Before/After Split View"
-            >
-              <span>✨</span> B/A
-            </button>
-          )}
-          {onShareUrl && (
-            <button
-              type="button"
-              onClick={onShareUrl}
-              className="bg-emerald-600/80 hover:bg-emerald-600 backdrop-blur-md text-white font-bold px-3 py-2 rounded-xl border border-white/15 text-xs active:scale-95 transition-all flex items-center gap-1 shadow-lg shadow-emerald-500/20"
-              title="Share Room Link"
-            >
-              <span>🔗</span> Share
-            </button>
-          )}
+
           <button
             type="button"
             onClick={() => onMarketOpenChange(true)}

@@ -19,7 +19,7 @@ import { useSurfaceStore } from "@/store/useSurfaceStore";
 import { SurfacePainter } from "@/ar/decor/SurfacePainter";
 import { SceneUrlSerializer } from "@/ar/persistence/SceneUrlSerializer";
 import { BeforeAfterSlider } from "@/components/ar/BeforeAfterSlider";
-
+import { MeasurementVisualizer } from "@/ar/measurement/MeasurementVisualizer";
 import {
   ARCameraStagerOverlay,
   type OverlayProduct,
@@ -27,7 +27,6 @@ import {
 } from "@/components/ar/ARCameraStagerOverlay";
 import demoCatalog from "@/data/demo-catalog";
 import { getModelUrl } from "@/lib/modelUrl";
-import { MeasurementVisualizer } from "@/ar/measurement/MeasurementVisualizer";
 import type { CalloutAnchors } from "@/ar/measurement/DimensionCallouts";
 import { estimateWallHeight, isPointInPolygon } from "@/lib/measurementMath";
 
@@ -124,20 +123,6 @@ export default function ARPage() {
     return ALL_PRODUCTS[0];
   });
   const [loadingCount, setLoadingCount] = useState(0);
-  const [beforeAfterOpen, setBeforeAfterOpen] = useState(false);
-
-  const handleShareUrl = useCallback(() => {
-    const objects = useARStore.getState().placedObjects;
-    const floor = useSurfaceStore.getState().selectedFloorPreset;
-    const wall = useSurfaceStore.getState().selectedWallPreset;
-    const url = SceneUrlSerializer.createShareableUrl(objects, floor, wall);
-    if (navigator.clipboard) {
-      void navigator.clipboard.writeText(url);
-      setStatusMessage("Copied shareable AR room link!");
-    } else {
-      alert(`Share link: ${url}`);
-    }
-  }, []);
 
   const sessionManagerRef = useRef<ARSessionManager | null>(null);
   const rendererRef = useRef<ARRenderer | null>(null);
@@ -170,9 +155,8 @@ export default function ARPage() {
     if (!surfacePainterRef.current) return;
     const corners = useMeasurementStore.getState().corners;
     const metrics = useMeasurementStore.getState().metrics;
-    const { selectedFloorPreset, selectedWallPreset } = useSurfaceStore.getState();
+    const { selectedFloorPreset } = useSurfaceStore.getState();
     surfacePainterRef.current.updateFloorSurface(corners, selectedFloorPreset);
-    surfacePainterRef.current.updateWallSurfaces(corners, metrics?.ceilingHeightM || 2.7, selectedWallPreset);
   }, []);
 
   useEffect(() => {
@@ -226,7 +210,7 @@ export default function ARPage() {
       transformControllerRef.current?.setRoomCorners(
         state.corners.map((c) => ({ x: c[0], z: c[2] }))
       );
-      if (state.mode === "idle") {
+      if (state.mode === "idle" || state.roomConfirmed) {
         measurementVisualizerRef.current?.clear();
       }
     });
@@ -387,6 +371,7 @@ export default function ARPage() {
 
     const transformController = new TransformController(
       objectPlacer,
+      renderer.getRenderer(),
       renderer.getCamera(),
       renderer.getScene()
     );
@@ -1058,16 +1043,8 @@ export default function ARPage() {
             finishItems={finishItems}
             onCloseFinish={() => setFinishOpen(false)}
             onPlaceOrder={handlePlaceOrder}
-            onBeforeAfter={() => setBeforeAfterOpen(true)}
-            onShareUrl={handleShareUrl}
           />
         )}
-
-        <BeforeAfterSlider
-          isOpen={beforeAfterOpen}
-          onClose={() => setBeforeAfterOpen(false)}
-          canvasRef={canvasRef}
-        />
       </div>
     </div>
   );

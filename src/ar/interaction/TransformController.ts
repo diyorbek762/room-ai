@@ -18,6 +18,7 @@ export interface GestureState {
 
 export class TransformController {
   private placer: ObjectPlacer;
+  private renderer: THREE.WebGLRenderer;
   private camera: THREE.PerspectiveCamera;
   private planeManager: PlaneManager | null = null;
   private anchorManager: AnchorManager | null = null;
@@ -53,10 +54,12 @@ export class TransformController {
 
   constructor(
     placer: ObjectPlacer,
+    renderer: THREE.WebGLRenderer,
     camera: THREE.PerspectiveCamera,
     scene: THREE.Scene
   ) {
     this.placer = placer;
+    this.renderer = renderer;
     this.camera = camera;
     this.scene = scene;
     this.callouts = new DimensionCallouts(scene);
@@ -114,6 +117,10 @@ export class TransformController {
     return this.callouts.getAnchors(out);
   }
 
+  private getActiveCamera(): THREE.Camera {
+    return this.renderer.xr.isPresenting ? this.renderer.xr.getCamera() : this.camera;
+  }
+
   /**
    * Cast a screen-space ray and find the topmost placed object under the cursor.
    * Returns the model id or null if no object was hit.
@@ -124,7 +131,7 @@ export class TransformController {
       -(screenY / window.innerHeight) * 2 + 1
     );
 
-    this.raycaster.setFromCamera(this._mouse, this.camera);
+    this.raycaster.setFromCamera(this._mouse, this.getActiveCamera());
     const targets = this.placer.getRaycastTargets();
     const intersects = this.raycaster.intersectObjects(targets, true);
 
@@ -166,7 +173,7 @@ export class TransformController {
     for (const placed of models) {
       // Use the world-space AABB center for projection
       const center = placed.boundingBox.getCenter(this._center);
-      this._projected.copy(center).project(this.camera);
+      this._projected.copy(center).project(this.getActiveCamera());
       if (this._projected.z > 1 || this._projected.z < -1) continue; // behind camera or clipped
       const px = (this._projected.x * 0.5 + 0.5) * window.innerWidth;
       const py = (-this._projected.y * 0.5 + 0.5) * window.innerHeight;
@@ -210,7 +217,7 @@ export class TransformController {
       (screenX / window.innerWidth) * 2 - 1,
       -(screenY / window.innerHeight) * 2 + 1
     );
-    this.raycaster.setFromCamera(this._mouse, this.camera);
+    this.raycaster.setFromCamera(this._mouse, this.getActiveCamera());
 
     if (placedModel.surfaceType === "wall" && placedModel.wallNormal) {
       // Wall-mounted item: drag along the wall plane

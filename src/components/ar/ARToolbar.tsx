@@ -11,7 +11,7 @@ export interface ARToolbarProps {
   onClear: () => void;
   onExit: () => void;
   onOpenSurfaces?: () => void;
-  onBeforeAfter?: () => void;
+
   onShareUrl?: () => void;
   objectCount: number;
 }
@@ -25,7 +25,7 @@ export function ARToolbar({
   onClear,
   onExit,
   onOpenSurfaces,
-  onBeforeAfter,
+
   onShareUrl,
   objectCount,
 }: ARToolbarProps) {
@@ -44,24 +44,7 @@ export function ARToolbar({
         </GlassPanel>
 
         <div className="flex gap-2 pointer-events-auto">
-          {onShareUrl && (
-            <button
-              onClick={onShareUrl}
-              className="bg-emerald-500/80 hover:bg-emerald-500 backdrop-blur-md text-white text-sm font-semibold px-3 py-2 rounded-xl border border-white/10 active:scale-95 transition-all flex items-center gap-1"
-              title="Share Room Link"
-            >
-              <span>🔗</span> Share
-            </button>
-          )}
-          {onBeforeAfter && (
-            <button
-              onClick={onBeforeAfter}
-              className="bg-indigo-500/80 hover:bg-indigo-500 backdrop-blur-md text-white text-sm font-semibold px-3 py-2 rounded-xl border border-white/10 active:scale-95 transition-all flex items-center gap-1"
-              title="Before/After Split View"
-            >
-              <span>✨</span> B/A
-            </button>
-          )}
+
           <button
             onClick={onExit}
             className="bg-red-500/80 hover:bg-red-500 backdrop-blur-md text-white font-semibold px-4 py-2 rounded-xl border border-white/10 active:scale-95 transition-all text-sm"
