@@ -5,9 +5,8 @@ import { cn, formatUZS } from "@/lib/format";
 import { useARStore } from "@/store/useARStore";
 import { useMeasurementStore } from "@/store";
 import { useSurfaceStore } from "@/store/useSurfaceStore";
+import { SURFACE_PRESETS, type SurfaceMaterialPreset } from "@/ar/decor/surfacePresets";
 import { MeasurementOverlay } from "./MeasurementOverlay";
-import { SurfacePickerModal } from "./SurfacePickerModal";
-
 
 export interface OverlayProduct {
   id: string;
@@ -34,6 +33,7 @@ export interface OverlayFinishItem {
 const storeColors: Record<string, string> = {
   asaxiy: "bg-blue-500/90",
   olcha: "bg-orange-500/90",
+  surface: "bg-purple-500/90",
 };
 
 const categoryLabels: Record<string, string> = {
@@ -42,9 +42,10 @@ const categoryLabels: Record<string, string> = {
   tables: "Tables",
   beds: "Beds",
   shelving: "Shelving",
+  surfaces: "🎨 Surfaces (Pol & Devor)",
 };
 
-const CATEGORY_KEYS = ["sofas", "chairs", "tables", "beds", "shelving"] as const;
+const CATEGORY_KEYS = ["sofas", "chairs", "tables", "beds", "shelving", "surfaces"] as const;
 type CategoryKey = (typeof CATEGORY_KEYS)[number];
 
 export interface ARCameraStagerOverlayProps {
@@ -84,6 +85,35 @@ export interface ARCameraStagerOverlayProps {
   onBeforeAfter?: () => void;
   onShareUrl?: () => void;
 }
+
+const surfaceOverlayProducts: OverlayProduct[] = [
+  {
+    id: "surface-clear",
+    name: "Clear Camera Passthrough",
+    nameUz: "Tiniq Kamera (Materiallarni O'chirish)",
+    priceUZS: 0,
+    storeSlug: "surface",
+    storeName: "Passthrough",
+    modelUrl: "",
+    categorySlug: "surfaces",
+    dimensions: { w: 0, h: 0, d: 0 },
+    placement: "floor-wall",
+    productClass: "surface",
+  },
+  ...SURFACE_PRESETS.map((preset) => ({
+    id: preset.id,
+    name: preset.name,
+    nameUz: preset.nameUz,
+    priceUZS: preset.pricePerM2,
+    storeSlug: "surface",
+    storeName: preset.type === "floor" ? "Pol (Floor)" : "Devor (Wall)",
+    modelUrl: "",
+    categorySlug: "surfaces",
+    dimensions: { w: 1, h: 1, d: 1 },
+    placement: preset.type as "floor" | "wall",
+    productClass: "surface" as const,
+  })),
+];
 
 export function ARCameraStagerOverlay(props: ARCameraStagerOverlayProps) {
   const {
@@ -127,7 +157,14 @@ export function ARCameraStagerOverlay(props: ARCameraStagerOverlayProps) {
   const corners = useMeasurementStore((s) => s.corners);
   const roomConfirmed = useMeasurementStore((s) => s.roomConfirmed);
 
-  const filteredMarket = products.filter((p) => {
+  const selectedFloorPreset = useSurfaceStore((s) => s.selectedFloorPreset);
+  const selectedWallPreset = useSurfaceStore((s) => s.selectedWallPreset);
+  const selectFloorPreset = useSurfaceStore((s) => s.selectFloorPreset);
+  const selectWallPreset = useSurfaceStore((s) => s.selectWallPreset);
+
+  const allMarketProducts = [...products, ...surfaceOverlayProducts];
+
+  const filteredMarket = allMarketProducts.filter((p) => {
     if (categoryFilter !== "all" && p.categorySlug !== categoryFilter) return false;
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
@@ -265,13 +302,6 @@ export function ARCameraStagerOverlay(props: ARCameraStagerOverlayProps) {
               Re-measure
             </button>
           )}
-          <button
-            type="button"
-            onClick={() => useSurfaceStore.getState().setSurfaceModalOpen(true)}
-            className="bg-purple-600/80 hover:bg-purple-600 backdrop-blur-md text-white font-bold px-3.5 py-2 rounded-xl border border-white/15 text-xs active:scale-95 transition-all flex items-center gap-1.5 shadow-lg shadow-purple-500/20"
-          >
-            <span>🎨</span> Surfaces
-          </button>
           {onBeforeAfter && (
             <button
               type="button"
@@ -312,9 +342,6 @@ export function ARCameraStagerOverlay(props: ARCameraStagerOverlayProps) {
           </button>
         </div>
       </div>
-
-      <SurfacePickerModal />
-
 
       {/* PRICE SUMMARY PANEL (Moved to bottom right to avoid overlap with top banners) */}
       {totalPriceUZS > 0 && (
@@ -522,6 +549,67 @@ export function ARCameraStagerOverlay(props: ARCameraStagerOverlayProps) {
             </div>
           ) : (
             filteredMarket.map((p) => {
+              if (p.productClass === "surface") {
+                const isClear = p.id === "surface-clear";
+                const preset = SURFACE_PRESETS.find((sp) => sp.id === p.id);
+                const isSelected = isClear
+                  ? !selectedFloorPreset && !selectedWallPreset
+                  : preset?.type === "floor"
+                  ? selectedFloorPreset?.id === preset.id
+                  : selectedWallPreset?.id === preset?.id;
+
+                return (
+                  <div
+                    key={p.id}
+                    className={cn(
+                      "bg-slate-800/60 border rounded-xl p-2.5 flex flex-col justify-between transition-all",
+                      isSelected ? "border-purple-400 bg-purple-500/20 ring-2 ring-purple-400/50" : "border-white/10"
+                    )}
+                  >
+                    <div className="relative w-full aspect-square rounded-lg bg-slate-950/80 flex flex-col items-center justify-center mb-2 overflow-hidden border border-white/10">
+                      {isClear ? (
+                        <span className="text-2xl">📷</span>
+                      ) : (
+                        <div
+                          className="w-12 h-12 rounded-full border-2 border-white/30 shadow-lg"
+                          style={{ backgroundColor: preset?.color || "#cccccc" }}
+                        />
+                      )}
+                      <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold text-white uppercase tracking-wider bg-purple-600/90">
+                        {p.storeName}
+                      </span>
+                    </div>
+
+                    <p className="text-white text-xs font-semibold leading-tight line-clamp-2 mb-0.5 min-h-[28px]">
+                      {p.nameUz || p.name}
+                    </p>
+
+                    <p className="text-purple-300 text-xs font-bold mb-2">
+                      {isClear ? "Passthrough (0 UZS)" : `${formatUZS(p.priceUZS)} / m²`}
+                    </p>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (isClear) {
+                          selectFloorPreset(null);
+                          selectWallPreset(null);
+                        } else if (preset) {
+                          if (preset.type === "floor") selectFloorPreset(preset);
+                          else selectWallPreset(preset);
+                        }
+                      }}
+                      className={cn(
+                        "w-full text-white text-[11px] font-bold py-2 rounded-lg active:scale-95 transition-all",
+                        isSelected ? "bg-purple-600 hover:bg-purple-700" : "bg-slate-700 hover:bg-slate-600"
+                      )}
+                    >
+                      {isSelected ? "Active Surface" : isClear ? "Clear All Surfaces" : "Apply Surface Material"}
+                    </button>
+                  </div>
+                );
+              }
+
               const w = Math.round(p.dimensions.w * 100);
               const h = Math.round(p.dimensions.h * 100);
               const d = Math.round(p.dimensions.d * 100);

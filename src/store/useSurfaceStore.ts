@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { SURFACE_PRESETS, type SurfaceMaterialPreset } from "@/ar/decor/surfacePresets";
+import type { SurfaceMaterialPreset } from "@/ar/decor/surfacePresets";
 
 interface SurfaceState {
   selectedFloorPreset: SurfaceMaterialPreset | null;
@@ -22,8 +22,8 @@ interface SurfaceActions {
 }
 
 export const useSurfaceStore = create<SurfaceState & SurfaceActions>((set, get) => ({
-  selectedFloorPreset: SURFACE_PRESETS.find((p) => p.id === "parquet-natural-oak") || null,
-  selectedWallPreset: SURFACE_PRESETS.find((p) => p.id === "aboy-japandi-linen") || null,
+  selectedFloorPreset: null,
+  selectedWallPreset: null,
   surfaceModalOpen: false,
 
   selectFloorPreset: (preset) => set({ selectedFloorPreset: preset }),
